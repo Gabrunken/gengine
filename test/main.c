@@ -3,6 +3,11 @@
 
 int main()
 {
-	printf("All done.\n");
+	if (!GEngineStart()) {
+		printf("Failed to initialize gengine, terminate...");
+		return 1;
+	}
+
+	GEngineTerminate();
     return 0;
 }

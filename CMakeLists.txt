@@ -30,8 +30,8 @@ FetchContent_MakeAvailable(gecslib)
 add_library(genginelib STATIC "./src/gengine.c")
 
 target_include_directories(genginelib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
 target_link_libraries(genginelib PUBLIC gecslib raylib)
+target_compile_definitions(genginelib PRIVATE GENGINE_DEBUG_LOG)
 
 option(GENGINE_BUILD_TEST "Build the test" ON)
 

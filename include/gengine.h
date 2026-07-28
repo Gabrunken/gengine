@@ -3,8 +3,10 @@
 
 /*
  *      Gabro's Game Engine
+ * Define "GENGINE_DEBUG_LOG" to enable console debug messages.
  */
 
-
+bool GEngineStart();
+void GEngineTerminate();
 
 #endif
