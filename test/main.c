@@ -3,7 +3,7 @@
 
 int main()
 {
-	if (!GEngineStart()) {
+	if (!GEngineInitialize("GEngine Test", 800, 600)) {
 		printf("Failed to initialize gengine, terminate...");
 		return 1;
 	}
