@@ -20,12 +20,10 @@ typedef size_t GEngineSystemID;
 
 enum GEngineSystemType
 {
-    SYSTEMTYPE_RENDER,
-    SYSTEMTYPE_LOGIC,
-    SYSTEMTYPE_PHYSICS,
-    SYSTEMTYPE_INPUT,
-    SYSTEMTYPE_START,
-    SYSTEMTYPE_END
+    GENGINE_SUBSYSTEM_TYPE_INPUT,
+    GENGINE_SUBSYSTEM_TYPE_LOGIC,
+    GENGINE_SUBSYSTEM_TYPE_PHYSICS,
+    GENGINE_SUBSYSTEM_TYPE_RENDER,
 };
 
 typedef struct
@@ -39,6 +37,9 @@ typedef struct
     Camera2D mainCamera2D;
     Camera3D mainCamera3D;
     Color backgroundColor;
+
+    float time;
+    float frameDeltaTime;
 } GEnginePublicContext;
 
 /*
@@ -59,7 +60,14 @@ void GEngineTerminate();
  * SystemType = END will only execute on GEngineGameEnd
  * DEV NOTE: DOCUMENT BETTER ON VARIADIC (same as gecs RegisterSystem).
  */
-GEngineSystemID GEngineRegisterSystem(void (*callback)(GameObjectID, void**), bool runOnPause, enum GEngineSystemType type, int componentCount, ...);
+GEngineSystemID GEngineRegisterSubSystem(
+        void (*StartUp)(void),
+   	    void (*CleanUp)(void),
+   	    void (*FrameStart)(void),
+    	void (*systemCallback)(GameObjectID, void**),
+		void (*FrameEnd)(void),
+
+		enum GEngineSystemType type, bool runOnPause, int componentCount, ...);
 
 /*
  * Registers a component type in the engine.

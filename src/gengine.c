@@ -1,6 +1,6 @@
 #include "dyarray.h"
 #include "raylib.h"
-#include "sprite_systems.h"
+#include "sprite_system.h"
 #include <gengine.h>
 
 #include <stdarg.h>
@@ -32,6 +32,17 @@ do {printf("\033[39m""GENGINE NOTE from %s - " format "\033[39m\n", __func__ __V
 #define GENGINE_INVALID_SYSTEM_ID GECS_INVALID_SYSTEM_ID
 #define GENGINE_INVALID_COMPONENT_TYPE_ID GECS_INVALID_COMPONENT_TYPE_ID
 
+typedef struct
+{
+	void (*StartUp)(void);
+    void (*CleanUp)(void);
+    void (*FrameStart)(void);
+	GEngineSystemID system;
+	void (*FrameEnd)(void);
+
+	enum GEngineSystemType type;
+} GEngineSubSystem;
+
 typedef struct GEngineScene
 {
 	GECSSnapshot snapshot;
@@ -40,20 +51,18 @@ typedef struct GEngineScene
 
 typedef struct
 {
-	GEngineSystemID id;
+	GEngineSubSystem subsystem;
 	enum GEngineSystemType type;
 	bool runOnPause;
-} GEngineSystemInfo;
+} GEngineSubSystemInfo;
 
 typedef struct
 {
 	bool initialized;
-	dyarray startSystems; //They all contain GEngineSystemInfo
-	dyarray endSystems;
-	dyarray renderSystems;
-	dyarray logicSystems;
-	dyarray physicsSystems;
-	dyarray inputSystems;
+	dyarray renderSubsystems;
+	dyarray logicSubsystems;
+	dyarray physicsSubsystems;
+	dyarray inputSubsystems;
 
 	bool gameStarted;
 	bool gamePaused;
@@ -69,12 +78,10 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 		return NULL;
 	}
 
-	if (!DyArrayCreate(&_privateContext.startSystems, sizeof(GEngineSystemInfo), 10) ||
-	  	!DyArrayCreate(&_privateContext.endSystems, sizeof(GEngineSystemInfo), 10) ||
-		!DyArrayCreate(&_privateContext.renderSystems, sizeof(GEngineSystemInfo), 10) ||
-		!DyArrayCreate(&_privateContext.logicSystems, sizeof(GEngineSystemInfo), 10) ||
-		!DyArrayCreate(&_privateContext.physicsSystems, sizeof(GEngineSystemInfo), 10) ||
-		!DyArrayCreate(&_privateContext.inputSystems, sizeof(GEngineSystemInfo), 10)){
+	if (!DyArrayCreate(&_privateContext.renderSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
+		!DyArrayCreate(&_privateContext.logicSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
+		!DyArrayCreate(&_privateContext.physicsSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
+		!DyArrayCreate(&_privateContext.inputSubsystems, sizeof(GEngineSubSystemInfo), 10)){
 		goto error;
 	}
 
@@ -99,37 +106,40 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 	 GENGINE_FIELD_TYPE_COLOR, "tint",
 	 GENGINE_FIELD_TYPE_UINT16_T, "depth");
 
-	GEngineRegisterSystem(SpriteLogicSystem, true, SYSTEMTYPE_LOGIC, 2,
+	GEngineRegisterSubSystem(
+		SpriteStartUp,
+		SpriteCleanUp,
+		SpriteFrameStart,
+		SpriteSystem,
+		SpriteFrameEnd,
+		true, GENGINE_SUBSYSTEM_TYPE_LOGIC, 2,
 			_publicContext.defaultComponents.transform2D,
 			_publicContext.defaultComponents.sprite);
 
+	InitWindow(windowWidth, windowHeight, windowTitle);
+
 	_publicContext.backgroundColor = BLACK;
 
+	_publicContext.mainCamera2D.target = (Vector2){ 0.0f, 0.0f };
+	_publicContext.mainCamera2D.rotation = 0.0f;
 	_publicContext.mainCamera2D.zoom = 1.0f; //Normal scale
+
 	_publicContext.mainCamera3D.up = (Vector3){0.0f, 1.0f, 0.0f};
 	_publicContext.mainCamera3D.fovy = 75.0f; //Fov
 	_publicContext.mainCamera3D.projection = CAMERA_PERSPECTIVE;
-
-	SpriteInitializeBuffers();
-
-	InitWindow(windowWidth, windowHeight, windowTitle);
 
 	GENGINE_LOG_NOTE("engine initialized");
 	return &_publicContext;
 
 	error:
-	if (_privateContext.startSystems.buf)
-		DyArrayFree(&_privateContext.startSystems);
-	if (_privateContext.endSystems.buf)
-		DyArrayFree(&_privateContext.endSystems);
-	if (_privateContext.renderSystems.buf)
-		DyArrayFree(&_privateContext.renderSystems);
-	if (_privateContext.logicSystems.buf)
-		DyArrayFree(&_privateContext.logicSystems);
-	if (_privateContext.physicsSystems.buf)
-		DyArrayFree(&_privateContext.physicsSystems);
-	if (_privateContext.inputSystems.buf)
-		DyArrayFree(&_privateContext.inputSystems);
+	if (_privateContext.renderSubsystems.buf)
+		DyArrayFree(&_privateContext.renderSubsystems);
+	if (_privateContext.logicSubsystems.buf)
+		DyArrayFree(&_privateContext.logicSubsystems);
+	if (_privateContext.physicsSubsystems.buf)
+		DyArrayFree(&_privateContext.physicsSubsystems);
+	if (_privateContext.inputSubsystems.buf)
+		DyArrayFree(&_privateContext.inputSubsystems);
 
 	GENGINE_LOG_ERROR("Failed to allocate memory for the system");
 	return NULL;
@@ -142,8 +152,6 @@ void GEngineTerminate()
 		return;
 	}
 
-	SpriteFreeBuffers();
-
 	CloseWindow();
 
 	GECS_CleanUp();
@@ -152,7 +160,14 @@ void GEngineTerminate()
 	_privateContext.initialized = false;
 }
 
-GEngineSystemID GEngineRegisterSystem(void (*callback)(GameObjectID, void**), bool runOnPause, enum GEngineSystemType type, int componentCount, ...)
+GEngineSystemID GEngineRegisterSubSystem(
+		void (*StartUp)(void),
+    	void (*CleanUp)(void),
+     	void (*FrameStart)(void),
+      	void (*systemCallback)(GameObjectID, void**),
+		void (*FrameEnd)(void),
+
+		enum GEngineSystemType type, bool runOnPause, int componentCount, ...)
 {
 	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
@@ -161,7 +176,7 @@ GEngineSystemID GEngineRegisterSystem(void (*callback)(GameObjectID, void**), bo
 
 	va_list args;
 	va_start(args, componentCount);
-	GEngineSystemID id = GECS_vRegisterSystem((void (*)(EntityID, void**))callback, componentCount, args);
+	GEngineSystemID id = GECS_vRegisterSystem((void (*)(EntityID, void**))systemCallback, componentCount, args);
 	va_end(args);
 
 	if (id == GENGINE_INVALID_SYSTEM_ID) {
@@ -169,30 +184,28 @@ GEngineSystemID GEngineRegisterSystem(void (*callback)(GameObjectID, void**), bo
 		return GENGINE_INVALID_SYSTEM_ID;
 	}
 
-	GEngineSystemInfo systemInfo = {0};
-	systemInfo.id = id;
+	GEngineSubSystemInfo systemInfo = {0};
+	systemInfo.subsystem.system = id;
+	systemInfo.subsystem.StartUp = StartUp;
+	systemInfo.subsystem.FrameStart = FrameStart;
+	systemInfo.subsystem.FrameEnd = FrameEnd;
+	systemInfo.subsystem.CleanUp = CleanUp;
 	systemInfo.type = type;
 	systemInfo.runOnPause = runOnPause;
 
 	switch (type)
 	{
-	case SYSTEMTYPE_START:
-		DyArrayAddElement(&_privateContext.startSystems, &systemInfo);
+	case GENGINE_SUBSYSTEM_TYPE_RENDER:
+		DyArrayAddElement(&_privateContext.renderSubsystems, &systemInfo);
 		break;
-	case SYSTEMTYPE_END:
-		DyArrayAddElement(&_privateContext.endSystems, &systemInfo);
+	case GENGINE_SUBSYSTEM_TYPE_LOGIC:
+		DyArrayAddElement(&_privateContext.logicSubsystems, &systemInfo);
 		break;
-	case SYSTEMTYPE_RENDER:
-		DyArrayAddElement(&_privateContext.renderSystems, &systemInfo);
+	case GENGINE_SUBSYSTEM_TYPE_PHYSICS:
+		DyArrayAddElement(&_privateContext.physicsSubsystems, &systemInfo);
 		break;
-	case SYSTEMTYPE_LOGIC:
-		DyArrayAddElement(&_privateContext.logicSystems, &systemInfo);
-		break;
-	case SYSTEMTYPE_PHYSICS:
-		DyArrayAddElement(&_privateContext.physicsSystems, &systemInfo);
-		break;
-	case SYSTEMTYPE_INPUT:
-		DyArrayAddElement(&_privateContext.inputSystems, &systemInfo);
+	case GENGINE_SUBSYSTEM_TYPE_INPUT:
+		DyArrayAddElement(&_privateContext.inputSubsystems, &systemInfo);
 		break;
 	default:
 		break;
@@ -233,14 +246,155 @@ void GEngineStartGame()
 		return;
 	}
 
-	for (size_t i = 0; i < _privateContext.startSystems.elementCount; i++)
+	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++)
 	{
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.startSystems, i);
-		SystemID id = (SystemID)systemInfo->id;
-		GECS_ExecuteSystem(id);
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
+		if (systemInfo->subsystem.StartUp)
+			systemInfo->subsystem.StartUp();
+	}
+
+	for (size_t i = 0; i < _privateContext.logicSubsystems.elementCount; i++)
+	{
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.logicSubsystems, i);
+		if (systemInfo->subsystem.StartUp)
+			systemInfo->subsystem.StartUp();
+	}
+
+	for (size_t i = 0; i < _privateContext.physicsSubsystems.elementCount; i++)
+	{
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.physicsSubsystems, i);
+		if (systemInfo->subsystem.StartUp)
+			systemInfo->subsystem.StartUp();
+	}
+
+	for (size_t i = 0; i < _privateContext.renderSubsystems.elementCount; i++)
+	{
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.renderSubsystems, i);
+		if (systemInfo->subsystem.StartUp)
+			systemInfo->subsystem.StartUp();
 	}
 
 	_privateContext.gameStarted = true;
+}
+
+void GEngineProcessFrame()
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	if (!_privateContext.gameStarted) {
+		GENGINE_LOG_MISUSE("game has not been started yet");
+		return;
+	}
+
+	_publicContext.time = GetTime();
+	_publicContext.frameDeltaTime = GetFrameTime();
+
+	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++) {
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
+
+		if (systemInfo->subsystem.FrameStart)
+			systemInfo->subsystem.FrameStart();
+
+		SystemID id = (SystemID)systemInfo->subsystem.system;
+		GECS_ExecuteSystem(id);
+
+		if (systemInfo->subsystem.FrameEnd)
+			systemInfo->subsystem.FrameEnd();
+	}
+
+	for (size_t i = 0; i < _privateContext.logicSubsystems.elementCount; i++) {
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.logicSubsystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
+
+		if (systemInfo->subsystem.FrameStart)
+			systemInfo->subsystem.FrameStart();
+
+		SystemID id = (SystemID)systemInfo->subsystem.system;
+		GECS_ExecuteSystem(id);
+
+		if (systemInfo->subsystem.FrameEnd)
+			systemInfo->subsystem.FrameEnd();
+	}
+
+	for (size_t i = 0; i < _privateContext.physicsSubsystems.elementCount; i++) {
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.physicsSubsystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
+
+		if (systemInfo->subsystem.FrameStart)
+			systemInfo->subsystem.FrameStart();
+
+		SystemID id = (SystemID)systemInfo->subsystem.system;
+		GECS_ExecuteSystem(id);
+
+		if (systemInfo->subsystem.FrameEnd)
+			systemInfo->subsystem.FrameEnd();
+	}
+
+	BeginDrawing();
+	ClearBackground(_publicContext.backgroundColor);
+
+	for (size_t i = 0; i < _privateContext.renderSubsystems.elementCount; i++) {
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.renderSubsystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
+
+		if (systemInfo->subsystem.FrameStart)
+			systemInfo->subsystem.FrameStart();
+
+		SystemID id = (SystemID)systemInfo->subsystem.system;
+		GECS_ExecuteSystem(id);
+
+		if (systemInfo->subsystem.FrameEnd)
+			systemInfo->subsystem.FrameEnd();
+	}
+
+	EndDrawing();
+
+	GECS_ProcessFrameEnd();
+}
+
+void GEngineEndGame()
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	if (!_privateContext.gameStarted) {
+		GENGINE_LOG_MISUSE("game has not been started yet");
+		return;
+	}
+
+	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++)
+	{
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
+		systemInfo->subsystem.CleanUp();
+	}
+
+	for (size_t i = 0; i < _privateContext.logicSubsystems.elementCount; i++)
+	{
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.logicSubsystems, i);
+		systemInfo->subsystem.CleanUp();
+	}
+
+	for (size_t i = 0; i < _privateContext.physicsSubsystems.elementCount; i++)
+	{
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.physicsSubsystems, i);
+		systemInfo->subsystem.CleanUp();
+	}
+
+	for (size_t i = 0; i < _privateContext.renderSubsystems.elementCount; i++)
+	{
+		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.renderSubsystems, i);
+		systemInfo->subsystem.CleanUp();
+	}
+
+	GEngineMakeNewScene();
+
+	_privateContext.gameStarted = false;
 }
 
 bool GEngineGameWantsToRun()
@@ -306,91 +460,6 @@ void GEngineResumeGame()
 	}
 
 	_privateContext.gamePaused = false;
-}
-
-void GEngineProcessFrame()
-{
-	if (!_privateContext.initialized) {
-		GENGINE_LOG_MISUSE("engine is not yet initialized");
-		return;
-	}
-
-	if (!_privateContext.gameStarted) {
-		GENGINE_LOG_MISUSE("game has not been started yet");
-		return;
-	}
-
-	//Input
-	for (size_t i = 0; i < _privateContext.inputSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSystems, i);
-		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
-		SystemID id = (SystemID)systemInfo->id;
-		GECS_ExecuteSystem(id);
-	}
-
-	//Logic
-	for (size_t i = 0; i < _privateContext.logicSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.logicSystems, i);
-		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
-		SystemID id = (SystemID)systemInfo->id;
-		GECS_ExecuteSystem(id);
-	}
-
-	//Physics
-	for (size_t i = 0; i < _privateContext.physicsSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.physicsSystems, i);
-		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
-		SystemID id = (SystemID)systemInfo->id;
-		GECS_ExecuteSystem(id);
-	}
-
-	BeginDrawing();
-	ClearBackground(_publicContext.backgroundColor);
-
-	BeginMode3D(_publicContext.mainCamera3D);
-
-	//Rendering
-	for (size_t i = 0; i < _privateContext.renderSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.renderSystems, i);
-		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
-		SystemID id = (SystemID)systemInfo->id;
-		GECS_ExecuteSystem(id);
-	}
-
-	EndMode3D();
-
-	SpritePrepareRendering();
-
-	BeginMode2D(_publicContext.mainCamera2D);
-	SpriteFlushRendering();
-	EndMode2D();
-	EndDrawing();
-
-	GECS_ProcessFrameEnd();
-}
-
-void GEngineEndGame()
-{
-	if (!_privateContext.initialized) {
-		GENGINE_LOG_MISUSE("engine is not yet initialized");
-		return;
-	}
-
-	if (!_privateContext.gameStarted) {
-		GENGINE_LOG_MISUSE("game has not been started yet");
-		return;
-	}
-
-	for (size_t i = 0; i < _privateContext.endSystems.elementCount; i++)
-	{
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.endSystems, i);
-		SystemID id = (SystemID)systemInfo->id;
-		GECS_ExecuteSystem(id);
-	}
-
-	GEngineMakeNewScene();
-
-	_privateContext.gameStarted = false;
 }
 
 void GEngineMakeNewScene()

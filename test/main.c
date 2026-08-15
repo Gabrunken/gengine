@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include <stdio.h>
 #include <gengine.h>
+#include <stdint.h>
 
 Texture2D tile;
 
@@ -48,17 +49,20 @@ int main()
 		return 1;
 	}
 
-	GEngine->backgroundColor = DARKPURPLE;
+	GEngine->backgroundColor = DARKBLUE;
 
 	tile = LoadTexture("tile.png");
 
 	GEngineStartGame();
 	while (GEngineGameWantsToRun())
 	{
-		if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
-			int depth = GetRandomValue(0, 9);
+		if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+			GEngine->backgroundColor = tints[GetRandomValue(0, 9)];
+		}
+
+		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+			int depth = GetRandomValue(0, UINT16_MAX);
 			InstantiateTileAtMousePosition(depth);
-			printf("Instantiated tile with depth %d.\n", depth);
 		}
 
 		if (IsKeyDown(KEY_D)) {
@@ -75,6 +79,14 @@ int main()
 
 		if (IsKeyDown(KEY_S)) {
 			GEngine->mainCamera2D.offset.y -= 250 * GetFrameTime();
+		}
+
+		if (IsKeyDown(KEY_Q)) {
+			GEngine->mainCamera2D.rotation += 20 * GetFrameTime();
+		}
+
+		if (IsKeyDown(KEY_E)) {
+			GEngine->mainCamera2D.rotation -= 20 * GetFrameTime();
 		}
 
 		DrawText(TextFormat("FPS: %i", GetFPS()), 10, 10, 20, GREEN);

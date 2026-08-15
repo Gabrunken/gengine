@@ -4,6 +4,6 @@
 /*
  * Include all system headers
  */
-#include <sprite_systems.h>
+#include <sprite_system.h>
 
 #endif

@@ -1,7 +1,7 @@
 #include "default_components.h"
 #include "dyarray.h"
 #include "raylib.h"
-#include <sprite_systems.h>
+#include <sprite_system.h>
 #include <stdlib.h>
 
 extern GEnginePublicContext _publicContext;
@@ -16,17 +16,18 @@ typedef struct
 	SpriteComponent sprite;
 } DrawCommand;
 
-void SpriteInitializeBuffers()
+void SpriteStartUp()
 {
 	if (drawCommandQueue.buf) return;
 	DyArrayCreate(&drawCommandQueue, sizeof(DrawCommand), 1000);
 }
 
-void SpritePrepareRendering()
+void SpriteFrameStart()
 {
 	Vector2 camTopLeft = GetScreenToWorld2D((Vector2){0, 0}, _publicContext.mainCamera2D);
 
 	Vector2 camBottomRight = GetScreenToWorld2D((Vector2){GetScreenWidth(), GetScreenHeight()}, _publicContext.mainCamera2D);
+
 
 	cameraRect = (Rectangle){
 	    camTopLeft.x,
@@ -34,9 +35,11 @@ void SpritePrepareRendering()
 	    camBottomRight.x - camTopLeft.x,
 	    camBottomRight.y - camTopLeft.y
 	};
+
+	//Should take enlarged bounding box to take rotation into account
 }
 
-void SpriteLogicSystem(GameObjectID gameObjectID, void** components)
+void SpriteSystem(GameObjectID gameObjectID, void** components)
 {
 	Transform2DComponent* transform = components[0];
 	SpriteComponent* sprite = components[1];
@@ -72,18 +75,19 @@ static int CompareDrawCommandIndices(const void* a, const void* b)
     return (cmdA->sprite.depth - cmdB->sprite.depth);
 }
 
-void SpriteFlushRendering()
+void SpriteFrameEnd()
 {
 	size_t count = drawCommandQueue.elementCount;
+	if (count == 0) return;
 
 	uint32_t* sortIndices = malloc(count * sizeof(uint32_t));
 	for (uint32_t i = 0; i < count; i++) {
 	    sortIndices[i] = i;
 	}
 
-	printf("Drawing %zu sprites.\n", count);
-
 	qsort(sortIndices, count, sizeof(uint32_t), CompareDrawCommandIndices);
+
+	BeginMode2D(_publicContext.mainCamera2D);
 
 	for (size_t i = 0; i < count; i++)
 	{
@@ -97,13 +101,15 @@ void SpriteFlushRendering()
 			cmd->sprite.texture,
 			(Rectangle){0,0,cmd->sprite.texture.width,cmd->sprite.texture.height},
 		 	dest, (Vector2){dest.width / 2.0f, dest.height / 2.0f}, cmd->transform.rotation, cmd->sprite.tint);
-   }
+	}
+
+	EndMode2D();
 
 	free(sortIndices);
 	drawCommandQueue.elementCount = 0;
 }
 
-void SpriteFreeBuffers()
+void SpriteCleanUp()
 {
 	if (!drawCommandQueue.buf) return;
 	DyArrayFree(&drawCommandQueue);
