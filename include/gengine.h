@@ -5,21 +5,12 @@
 
 /*
  *      Gabro's Game Engine
- * Define "GENGINE_DEBUG_LOG" to enable console debug messages.
+ * Define "GENGINE_DEBUG_LOG" globally to enable console debug messages.
  */
 
+#include "raylib.h"
 #include <stdint.h>
 #define GENGINE_SCENE_NAME_MAX_LENGTH 23
-
-/*
- * Initialize the GEngine library and creates the window.
- */
-bool GEngineInitialize(const char* windowTitle, unsigned short windowWidth, unsigned short windowHeight);
-
-/*
- * Clean up the GEngine library.
- */
-void GEngineTerminate();
 
 typedef struct GEngineScene GEngineScene; //Forward declaration for opaque pointer.
 
@@ -36,6 +27,30 @@ enum GEngineSystemType
     SYSTEMTYPE_START,
     SYSTEMTYPE_END
 };
+
+typedef struct
+{
+    struct
+    {
+        GEngineComponentTypeID transform2D;
+        GEngineComponentTypeID sprite;
+    } defaultComponents;
+
+    Camera2D mainCamera2D;
+    Camera3D mainCamera3D;
+    Color backgroundColor;
+} GEnginePublicContext;
+
+/*
+ * Initialize the GEngine library and creates the window.
+ * Check if the return value is NULL or not to verify initialization success.
+ */
+GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short windowWidth, unsigned short windowHeight);
+
+/*
+ * Clean up the GEngine library.
+ */
+void GEngineTerminate();
 
 /*
  * Registers a system in the engine.
@@ -80,7 +95,7 @@ void GEngineResumeGame();
  * Run every system, handling logic, updating and rendering the game.
  * Even if the game is paused, you still need to call this since it handles which systems still need to be executed and which not.
  */
-void GEngineRunGame();
+void GEngineProcessFrame();
 
 /*
  * Call this whenever you want to end the game, setting GEngineGameWantsToRun to false.
@@ -186,20 +201,20 @@ bool GECS_DoesGameObjectExist(GameObjectID entity);
  * @brief Deactivate this entity, disabling any system from interacting with it.
  * @param entity The entity ID to deactivate.
  */
-void GEngineDisableEntity(GameObjectID entity);
+void GEngineDisableGameObject(GameObjectID entity);
 
 /*
  * @brief Activate this entity, re-enabling the interaction with any system.
  * @param entity The entity ID to activate.
  */
-void GEngineEnableEntity(GameObjectID entity);
+void GEngineEnableGameObject(GameObjectID entity);
 
 /*
  * @brief Checks if an entity is active.
  * @param entity The target entity.
  * @return True is the entity is active, False otherwise.
  */
-bool GEngineIsEntityEnabled(GameObjectID entity);
+bool GEngineIsGameObjectEnabled(GameObjectID entity);
 
 /*
  * @brief Deactivate this entity's specified component, disabling any system from interacting with it.

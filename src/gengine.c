@@ -1,5 +1,6 @@
 #include "dyarray.h"
 #include "raylib.h"
+#include "sprite_systems.h"
 #include <gengine.h>
 
 #include <stdarg.h>
@@ -8,6 +9,9 @@
 #include <gecs.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <default_components.h>
+#include <default_systems.h>
 
 #ifdef GENGINE_DEBUG_LOG
 #define GENGINE_LOG_MISUSE(format, ...)\
@@ -53,85 +57,104 @@ typedef struct
 
 	bool gameStarted;
 	bool gamePaused;
-} GEngineContext;
+} GEnginePrivateContext;
 
-static GEngineContext _context;
+static GEnginePrivateContext _privateContext;
+GEnginePublicContext _publicContext;
 
-bool GEngineInitialize(const char* windowTitle, unsigned short windowWidth, unsigned short windowHeight)
+GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short windowWidth, unsigned short windowHeight)
 {
-	if (_context.initialized) {
+	if (_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is already initialized");
-		return true;
+		return NULL;
 	}
 
-	if (!DyArrayCreate(&_context.startSystems, sizeof(GEngineSystemInfo), 10)) {
+	if (!DyArrayCreate(&_privateContext.startSystems, sizeof(GEngineSystemInfo), 10) ||
+	  	!DyArrayCreate(&_privateContext.endSystems, sizeof(GEngineSystemInfo), 10) ||
+		!DyArrayCreate(&_privateContext.renderSystems, sizeof(GEngineSystemInfo), 10) ||
+		!DyArrayCreate(&_privateContext.logicSystems, sizeof(GEngineSystemInfo), 10) ||
+		!DyArrayCreate(&_privateContext.physicsSystems, sizeof(GEngineSystemInfo), 10) ||
+		!DyArrayCreate(&_privateContext.inputSystems, sizeof(GEngineSystemInfo), 10)){
 		goto error;
 	}
 
-	if (!DyArrayCreate(&_context.endSystems, sizeof(GEngineSystemInfo), 10)) {
-		goto error;
-	}
+	_privateContext.initialized = true;
 
-	if (!DyArrayCreate(&_context.renderSystems, sizeof(GEngineSystemInfo), 10)) {
-		goto error;
-	}
-
-	if (!DyArrayCreate(&_context.logicSystems, sizeof(GEngineSystemInfo), 10)) {
-		goto error;
-	}
-
-	if (!DyArrayCreate(&_context.physicsSystems, sizeof(GEngineSystemInfo), 10)) {
-		goto error;
-	}
-
-	if (!DyArrayCreate(&_context.inputSystems, sizeof(GEngineSystemInfo), 10)) {
-		goto error;
-	}
+	/*
+	 * ECS Initialization
+	 * Component and System registration.
+	 */
 
 	GECS_Init();
+
+	_publicContext.defaultComponents.transform2D = GECS_RegisterComponent(sizeof(Transform2DComponent), "Transform2D",
+	 3,
+	 GENGINE_FIELD_TYPE_VECTOR2, "position",
+	 GENGINE_FIELD_TYPE_VECTOR2, "scale",
+	 GENGINE_FIELD_TYPE_FLOAT, "rotation");
+
+	_publicContext.defaultComponents.sprite = GECS_RegisterComponent(sizeof(SpriteComponent), "Sprite",
+	 3,
+	 GENGINE_FIELD_TYPE_TEXTURE, "texture",
+	 GENGINE_FIELD_TYPE_COLOR, "tint",
+	 GENGINE_FIELD_TYPE_UINT16_T, "depth");
+
+	GEngineRegisterSystem(SpriteLogicSystem, true, SYSTEMTYPE_LOGIC, 2,
+			_publicContext.defaultComponents.transform2D,
+			_publicContext.defaultComponents.sprite);
+
+	_publicContext.backgroundColor = BLACK;
+
+	_publicContext.mainCamera2D.zoom = 1.0f; //Normal scale
+	_publicContext.mainCamera3D.up = (Vector3){0.0f, 1.0f, 0.0f};
+	_publicContext.mainCamera3D.fovy = 75.0f; //Fov
+	_publicContext.mainCamera3D.projection = CAMERA_PERSPECTIVE;
+
+	SpriteInitializeBuffers();
 
 	InitWindow(windowWidth, windowHeight, windowTitle);
 
 	GENGINE_LOG_NOTE("engine initialized");
-	_context.initialized = true;
-	return true;
+	return &_publicContext;
 
 	error:
-	if (_context.startSystems.buf)
-		DyArrayFree(&_context.startSystems);
-	if (_context.endSystems.buf)
-		DyArrayFree(&_context.endSystems);
-	if (_context.renderSystems.buf)
-		DyArrayFree(&_context.renderSystems);
-	if (_context.logicSystems.buf)
-		DyArrayFree(&_context.logicSystems);
-	if (_context.physicsSystems.buf)
-		DyArrayFree(&_context.physicsSystems);
-	if (_context.inputSystems.buf)
-		DyArrayFree(&_context.inputSystems);
+	if (_privateContext.startSystems.buf)
+		DyArrayFree(&_privateContext.startSystems);
+	if (_privateContext.endSystems.buf)
+		DyArrayFree(&_privateContext.endSystems);
+	if (_privateContext.renderSystems.buf)
+		DyArrayFree(&_privateContext.renderSystems);
+	if (_privateContext.logicSystems.buf)
+		DyArrayFree(&_privateContext.logicSystems);
+	if (_privateContext.physicsSystems.buf)
+		DyArrayFree(&_privateContext.physicsSystems);
+	if (_privateContext.inputSystems.buf)
+		DyArrayFree(&_privateContext.inputSystems);
 
 	GENGINE_LOG_ERROR("Failed to allocate memory for the system");
-	return false;
+	return NULL;
 }
 
 void GEngineTerminate()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
+
+	SpriteFreeBuffers();
 
 	CloseWindow();
 
 	GECS_CleanUp();
 
 	GENGINE_LOG_NOTE("engine terminated");
-	_context.initialized = false;
+	_privateContext.initialized = false;
 }
 
 GEngineSystemID GEngineRegisterSystem(void (*callback)(GameObjectID, void**), bool runOnPause, enum GEngineSystemType type, int componentCount, ...)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return GENGINE_INVALID_COMPONENT_TYPE_ID;
 	}
@@ -154,22 +177,22 @@ GEngineSystemID GEngineRegisterSystem(void (*callback)(GameObjectID, void**), bo
 	switch (type)
 	{
 	case SYSTEMTYPE_START:
-		DyArrayAddElement(&_context.startSystems, &systemInfo);
+		DyArrayAddElement(&_privateContext.startSystems, &systemInfo);
 		break;
 	case SYSTEMTYPE_END:
-		DyArrayAddElement(&_context.endSystems, &systemInfo);
+		DyArrayAddElement(&_privateContext.endSystems, &systemInfo);
 		break;
 	case SYSTEMTYPE_RENDER:
-		DyArrayAddElement(&_context.renderSystems, &systemInfo);
+		DyArrayAddElement(&_privateContext.renderSystems, &systemInfo);
 		break;
 	case SYSTEMTYPE_LOGIC:
-		DyArrayAddElement(&_context.logicSystems, &systemInfo);
+		DyArrayAddElement(&_privateContext.logicSystems, &systemInfo);
 		break;
 	case SYSTEMTYPE_PHYSICS:
-		DyArrayAddElement(&_context.physicsSystems, &systemInfo);
+		DyArrayAddElement(&_privateContext.physicsSystems, &systemInfo);
 		break;
 	case SYSTEMTYPE_INPUT:
-		DyArrayAddElement(&_context.inputSystems, &systemInfo);
+		DyArrayAddElement(&_privateContext.inputSystems, &systemInfo);
 		break;
 	default:
 		break;
@@ -180,7 +203,7 @@ GEngineSystemID GEngineRegisterSystem(void (*callback)(GameObjectID, void**), bo
 
 GEngineComponentTypeID GEngineRegisterComponent(size_t size, const char* name, uint32_t fieldCount, ...)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return GENGINE_INVALID_COMPONENT_TYPE_ID;
 	}
@@ -200,159 +223,179 @@ GEngineComponentTypeID GEngineRegisterComponent(size_t size, const char* name, u
 
 void GEngineStartGame()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
 
-	if (_context.gameStarted) {
+	if (_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game already started");
 		return;
 	}
 
-	for (size_t i = 0; i < _context.startSystems.elementCount; i++)
+	for (size_t i = 0; i < _privateContext.startSystems.elementCount; i++)
 	{
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_context.startSystems, i);
+		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.startSystems, i);
 		SystemID id = (SystemID)systemInfo->id;
 		GECS_ExecuteSystem(id);
 	}
 
-	_context.gameStarted = true;
+	_privateContext.gameStarted = true;
 }
 
 bool GEngineGameWantsToRun()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return false;
 	}
 
-	if (!_context.gameStarted) {
+	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return false;
 	}
 
-	return _context.gameStarted;
+	if (WindowShouldClose()) {
+		GEngineEndGame();
+		return false;
+	}
+
+	return _privateContext.gameStarted;
 }
 
 void GEnginePauseGame()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
 
-	if (!_context.gameStarted) {
+	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return;
 	}
 
-	_context.gamePaused = true;
+	_privateContext.gamePaused = true;
 }
 
 bool GEngineIsGamePaused()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return false;
 	}
 
-	if (!_context.gameStarted) {
+	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return false;
 	}
 
-	return _context.gamePaused;
+	return _privateContext.gamePaused;
 }
 
 void GEngineResumeGame()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
 
-	if (!_context.gameStarted) {
+	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return;
 	}
 
-	_context.gamePaused = false;
+	_privateContext.gamePaused = false;
 }
 
-void GEngineRunGame()
+void GEngineProcessFrame()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
 
-	if (!_context.gameStarted) {
+	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return;
 	}
 
 	//Input
-	for (size_t i = 0; i < _context.inputSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_context.inputSystems, i);
-		if (_context.gamePaused && !systemInfo->runOnPause) continue;
+	for (size_t i = 0; i < _privateContext.inputSystems.elementCount; i++) {
+		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
 		SystemID id = (SystemID)systemInfo->id;
 		GECS_ExecuteSystem(id);
 	}
 
 	//Logic
-	for (size_t i = 0; i < _context.logicSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_context.logicSystems, i);
-		if (_context.gamePaused && !systemInfo->runOnPause) continue;
+	for (size_t i = 0; i < _privateContext.logicSystems.elementCount; i++) {
+		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.logicSystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
 		SystemID id = (SystemID)systemInfo->id;
 		GECS_ExecuteSystem(id);
 	}
 
 	//Physics
-	for (size_t i = 0; i < _context.physicsSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_context.physicsSystems, i);
-		if (_context.gamePaused && !systemInfo->runOnPause) continue;
+	for (size_t i = 0; i < _privateContext.physicsSystems.elementCount; i++) {
+		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.physicsSystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
 		SystemID id = (SystemID)systemInfo->id;
 		GECS_ExecuteSystem(id);
 	}
 
-	render:
+	BeginDrawing();
+	ClearBackground(_publicContext.backgroundColor);
+
+	BeginMode3D(_publicContext.mainCamera3D);
+
 	//Rendering
-	for (size_t i = 0; i < _context.renderSystems.elementCount; i++) {
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_context.renderSystems, i);
-		if (_context.gamePaused && !systemInfo->runOnPause) continue;
+	for (size_t i = 0; i < _privateContext.renderSystems.elementCount; i++) {
+		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.renderSystems, i);
+		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
 		SystemID id = (SystemID)systemInfo->id;
 		GECS_ExecuteSystem(id);
 	}
+
+	EndMode3D();
+
+	SpritePrepareRendering();
+
+	BeginMode2D(_publicContext.mainCamera2D);
+	SpriteFlushRendering();
+	EndMode2D();
+	EndDrawing();
+
+	GECS_ProcessFrameEnd();
 }
 
 void GEngineEndGame()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
 
-	if (!_context.gameStarted) {
+	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return;
 	}
 
-	for (size_t i = 0; i < _context.endSystems.elementCount; i++)
+	for (size_t i = 0; i < _privateContext.endSystems.elementCount; i++)
 	{
-		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_context.endSystems, i);
+		GEngineSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.endSystems, i);
 		SystemID id = (SystemID)systemInfo->id;
 		GECS_ExecuteSystem(id);
 	}
 
 	GEngineMakeNewScene();
 
-	_context.gameStarted = false;
+	_privateContext.gameStarted = false;
 }
 
 void GEngineMakeNewScene()
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
@@ -360,9 +403,45 @@ void GEngineMakeNewScene()
 	GECS_ClearECS();
 }
 
+/*
+ * WORK IN PROGRESS FROM HERE
+ */
+
+GameObjectID GEngineCreateGameObject(const char* name)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return (GameObjectID){0};
+	}
+
+	EntityID id = GECS_CreateEntity(name);
+	return (GameObjectID){id.id, id.gen};
+}
+
+//The heavy lifting of checking if an entity exists, if a component exists etc... is done by the ecs, so no worries.
+void GEngineAttachComponent(GameObjectID entity, GEngineComponentTypeID componentTypeID, void* componentData)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	GECS_AttachComponent((EntityID){entity.id, entity.gen}, componentTypeID, componentData);
+}
+
+void GEngineDetachComponent(GameObjectID entity, GEngineComponentTypeID componentTypeID)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	GECS_DetachComponent((EntityID){entity.id, entity.gen}, componentTypeID);
+}
+
 GEngineScene* GEngineSaveScene(const char* name)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return NULL;
 	}
@@ -391,7 +470,7 @@ GEngineScene* GEngineSaveScene(const char* name)
 
 void GEngineLoadScene(const GEngineScene* scene)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
@@ -411,7 +490,7 @@ void GEngineLoadScene(const GEngineScene* scene)
 
 void GEngineFreeScene(GEngineScene** scene)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
@@ -434,7 +513,7 @@ void GEngineFreeScene(GEngineScene** scene)
 
 const char* GEngineGetSceneName(GEngineScene* scene)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return NULL;
 	}
@@ -449,7 +528,7 @@ const char* GEngineGetSceneName(GEngineScene* scene)
 
 bool GEngineIsSceneValid(const GEngineScene* scene)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return NULL;
 	}
@@ -464,7 +543,7 @@ bool GEngineIsSceneValid(const GEngineScene* scene)
 
 void GEngineSaveSceneInDisk(const GEngineScene* scene, const char* filePath)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
@@ -497,7 +576,7 @@ void GEngineSaveSceneInDisk(const GEngineScene* scene, const char* filePath)
 
 void GEngineSaveCurrentSceneInDisk(const char* sceneName, const char* filePath)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
@@ -530,7 +609,7 @@ void GEngineSaveCurrentSceneInDisk(const char* sceneName, const char* filePath)
 
 GEngineScene* GEngineMakeSceneFromDisk(const char* filePath)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return NULL;
 	}
@@ -565,7 +644,7 @@ GEngineScene* GEngineMakeSceneFromDisk(const char* filePath)
 
 void GEngineLoadSceneFromDisk(const char* filePath)
 {
-	if (!_context.initialized) {
+	if (!_privateContext.initialized) {
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}

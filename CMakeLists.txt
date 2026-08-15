@@ -27,9 +27,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(raylib)
 FetchContent_MakeAvailable(gecslib)
 
-add_library(genginelib STATIC "./src/gengine.c")
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.c)
 
-target_include_directories(genginelib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_library(genginelib STATIC ${SOURCES})
+
+target_include_directories(genginelib PUBLIC include include/systems)
 target_link_libraries(genginelib PUBLIC gecslib raylib)
 target_compile_definitions(genginelib PRIVATE GENGINE_DEBUG_LOG)
 
