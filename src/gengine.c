@@ -112,7 +112,7 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 		SpriteFrameStart,
 		SpriteSystem,
 		SpriteFrameEnd,
-		true, GENGINE_SUBSYSTEM_TYPE_LOGIC, 2,
+		GENGINE_SUBSYSTEM_TYPE_RENDER, true, 2,
 			_publicContext.defaultComponents.transform2D,
 			_publicContext.defaultComponents.sprite);
 

@@ -28,7 +28,6 @@ void SpriteFrameStart()
 
 	Vector2 camBottomRight = GetScreenToWorld2D((Vector2){GetScreenWidth(), GetScreenHeight()}, _publicContext.mainCamera2D);
 
-
 	cameraRect = (Rectangle){
 	    camTopLeft.x,
 	    camTopLeft.y,

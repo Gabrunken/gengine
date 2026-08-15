@@ -8,6 +8,15 @@
  * Define "GENGINE_DEBUG_LOG" globally to enable console debug messages.
  */
 
+/*
+ * NOTE FOR MYSELF
+ * Every rendering function of raylib MUST be called inside a registered RENDER type subsystem.
+ * Not doing so is undefined behaviour, so if you need anything drawn, do it inside a render subsystem.
+ * ANOTHER NOTE
+ * When you draw, it is your responsibility to wrap your draw commands in BeginMode2/3D followed by EndMode2/3D,
+ * since some systems might use the 2D camera and some might need the 3D camera, your choice.
+ */
+
 #include "raylib.h"
 #include <stdint.h>
 #define GENGINE_SCENE_NAME_MAX_LENGTH 23
