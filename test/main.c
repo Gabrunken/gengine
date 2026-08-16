@@ -1,5 +1,7 @@
 #include "default_components.h"
+#include "gizmos.h"
 #include "raylib.h"
+#include <math.h>
 #include <stdio.h>
 #include <gengine.h>
 #include <stdint.h>
@@ -56,10 +58,6 @@ int main()
 	GEngineStartGame();
 	while (GEngineGameWantsToRun())
 	{
-		if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
-			GEngine->backgroundColor = tints[GetRandomValue(0, 9)];
-		}
-
 		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
 			int depth = GetRandomValue(0, UINT16_MAX);
 			InstantiateTileAtMousePosition(depth);
@@ -89,7 +87,22 @@ int main()
 			GEngine->mainCamera2D.rotation -= 20 * GetFrameTime();
 		}
 
-		DrawText(TextFormat("FPS: %i", GetFPS()), 10, 10, 20, GREEN);
+		if (IsKeyPressed(KEY_M)) {
+			GEngine->gizmosEnabled = !GEngine->gizmosEnabled;
+		}
+
+		Rectangle cameraRect = GEngineGetCamera2DRect();
+		cameraRect.x += 10;
+		cameraRect.y += 10;
+		cameraRect.width -= 20;
+		cameraRect.height -= 20;
+
+		//UpdateCamera(&GEngine->mainCamera3D, CAMERA_FREE);
+
+		GEngineGizmosText(TextFormat("FPS: %i", GetFPS()), (Vector2){10, 10}, 20, GREEN);
+		//GEngineGizmosRect(cameraRect, RED, false);
+		GEngineGizmosArrow3D((Vector3){0, 0, -10}, (Vector3){0, sin(GetTime()) * 5, 0}, 0.1f, RED);
+		GEngineGizmosArrow2D((Vector2){0, 0}, (Vector2){cameraRect.x, cameraRect.y}, 5, GREEN);
 		GEngineProcessFrame();
 	}
 

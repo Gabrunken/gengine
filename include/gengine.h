@@ -17,8 +17,8 @@
  * since some systems might use the 2D camera and some might need the 3D camera, your choice.
  */
 
-#include "raylib.h"
 #include <stdint.h>
+#include <gizmos.h>
 #define GENGINE_SCENE_NAME_MAX_LENGTH 23
 
 typedef struct GEngineScene GEngineScene; //Forward declaration for opaque pointer.
@@ -47,8 +47,7 @@ typedef struct
     Camera3D mainCamera3D;
     Color backgroundColor;
 
-    float time;
-    float frameDeltaTime;
+    bool gizmosEnabled;
 } GEnginePublicContext;
 
 /*
@@ -118,6 +117,8 @@ void GEngineProcessFrame();
  * Call this whenever you want to end the game, setting GEngineGameWantsToRun to false.
  */
 void GEngineEndGame();
+
+Rectangle GEngineGetCamera2DRect();
 
 /*
  * ======================================

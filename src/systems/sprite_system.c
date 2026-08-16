@@ -1,6 +1,4 @@
-#include "default_components.h"
 #include "dyarray.h"
-#include "raylib.h"
 #include <sprite_system.h>
 #include <stdlib.h>
 
@@ -24,18 +22,7 @@ void SpriteStartUp()
 
 void SpriteFrameStart()
 {
-	Vector2 camTopLeft = GetScreenToWorld2D((Vector2){0, 0}, _publicContext.mainCamera2D);
-
-	Vector2 camBottomRight = GetScreenToWorld2D((Vector2){GetScreenWidth(), GetScreenHeight()}, _publicContext.mainCamera2D);
-
-	cameraRect = (Rectangle){
-	    camTopLeft.x,
-	    camTopLeft.y,
-	    camBottomRight.x - camTopLeft.x,
-	    camBottomRight.y - camTopLeft.y
-	};
-
-	//Should take enlarged bounding box to take rotation into account
+	cameraRect = GEngineGetCamera2DRect();
 }
 
 void SpriteSystem(GameObjectID gameObjectID, void** components)

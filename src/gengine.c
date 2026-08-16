@@ -1,16 +1,12 @@
 #include "dyarray.h"
 #include "raylib.h"
-#include "sprite_system.h"
+#include "raymath.h"
 #include <gengine.h>
-
-#include <stdarg.h>
-#include <stdio.h>
 
 #include <gecs.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <default_components.h>
 #include <default_systems.h>
 
 #ifdef GENGINE_DEBUG_LOG
@@ -56,6 +52,40 @@ typedef struct
 	bool runOnPause;
 } GEngineSubSystemInfo;
 
+typedef enum
+{
+	GENGINE_GIZMOS_TEXT,
+	GENGINE_GIZMOS_SPHERE,
+	GENGINE_GIZMOS_ARROW_2D,
+	GENGINE_GIZMOS_ARROW_3D,
+	GENGINE_GIZMOS_LINE,
+	GENGINE_GIZMOS_RECT,
+} GEngineGizmosCommandType;
+
+typedef struct
+{
+	GEngineGizmosCommandType type;
+
+	union
+	{
+		struct {const char* str; Vector2 pos; int fontSize; Color color;} text;
+		struct {Vector2 pos; Vector2 dir; float thickness; Color color;} arrow2D;
+		struct {Vector2 start; Vector2 end; Color color;} line;
+		struct {Rectangle rect; Color color; bool fill;} rect;
+	} args;
+} GEngineGizmosCommand2D;
+
+typedef struct
+{
+	GEngineGizmosCommandType type;
+
+	union
+	{
+		struct {Vector3 pos; float radius; Color color; bool wireframe;} sphere;
+		struct {Vector3 pos; Vector3 dir; float radius; Color color;} arrow3D;
+	} args;
+} GEngineGizmosCommand3D;
+
 typedef struct
 {
 	bool initialized;
@@ -64,12 +94,17 @@ typedef struct
 	dyarray physicsSubsystems;
 	dyarray inputSubsystems;
 
+	dyarray gizmosRenderingCommandQueue2D;
+	dyarray gizmosRenderingCommandQueue3D;
+
 	bool gameStarted;
 	bool gamePaused;
 } GEnginePrivateContext;
 
 static GEnginePrivateContext _privateContext;
 GEnginePublicContext _publicContext;
+
+void _GEngineFlushGizmos();
 
 GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short windowWidth, unsigned short windowHeight)
 {
@@ -78,10 +113,15 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 		return NULL;
 	}
 
-	if (!DyArrayCreate(&_privateContext.renderSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
-		!DyArrayCreate(&_privateContext.logicSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
+	if (!DyArrayCreate(&_privateContext.inputSubsystems, sizeof(GEngineSubSystemInfo), 10) 	 ||
+		!DyArrayCreate(&_privateContext.logicSubsystems, sizeof(GEngineSubSystemInfo), 10) 	 ||
 		!DyArrayCreate(&_privateContext.physicsSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
-		!DyArrayCreate(&_privateContext.inputSubsystems, sizeof(GEngineSubSystemInfo), 10)){
+		!DyArrayCreate(&_privateContext.renderSubsystems, sizeof(GEngineSubSystemInfo), 10)) {
+		goto error;
+	}
+
+	if (!DyArrayCreate(&_privateContext.gizmosRenderingCommandQueue2D, sizeof(GEngineGizmosCommand2D), 100) ||
+		!DyArrayCreate(&_privateContext.gizmosRenderingCommandQueue3D, sizeof(GEngineGizmosCommand3D), 100)) {
 		goto error;
 	}
 
@@ -120,26 +160,27 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 
 	_publicContext.backgroundColor = BLACK;
 
-	_publicContext.mainCamera2D.target = (Vector2){ 0.0f, 0.0f };
-	_publicContext.mainCamera2D.rotation = 0.0f;
 	_publicContext.mainCamera2D.zoom = 1.0f; //Normal scale
 
+	_publicContext.mainCamera3D.target = (Vector3){0.0f, 0.0f, -1.0f};
 	_publicContext.mainCamera3D.up = (Vector3){0.0f, 1.0f, 0.0f};
 	_publicContext.mainCamera3D.fovy = 75.0f; //Fov
 	_publicContext.mainCamera3D.projection = CAMERA_PERSPECTIVE;
+
+	_publicContext.gizmosEnabled = true;
 
 	GENGINE_LOG_NOTE("engine initialized");
 	return &_publicContext;
 
 	error:
-	if (_privateContext.renderSubsystems.buf)
-		DyArrayFree(&_privateContext.renderSubsystems);
+	if (_privateContext.inputSubsystems.buf)
+		DyArrayFree(&_privateContext.inputSubsystems);
 	if (_privateContext.logicSubsystems.buf)
 		DyArrayFree(&_privateContext.logicSubsystems);
 	if (_privateContext.physicsSubsystems.buf)
 		DyArrayFree(&_privateContext.physicsSubsystems);
-	if (_privateContext.inputSubsystems.buf)
-		DyArrayFree(&_privateContext.inputSubsystems);
+	if (_privateContext.renderSubsystems.buf)
+		DyArrayFree(&_privateContext.renderSubsystems);
 
 	GENGINE_LOG_ERROR("Failed to allocate memory for the system");
 	return NULL;
@@ -151,6 +192,14 @@ void GEngineTerminate()
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
+
+	DyArrayFree(&_privateContext.inputSubsystems);
+	DyArrayFree(&_privateContext.logicSubsystems);
+	DyArrayFree(&_privateContext.physicsSubsystems);
+	DyArrayFree(&_privateContext.renderSubsystems);
+
+	DyArrayFree(&_privateContext.gizmosRenderingCommandQueue2D);
+	DyArrayFree(&_privateContext.gizmosRenderingCommandQueue3D);
 
 	CloseWindow();
 
@@ -289,9 +338,6 @@ void GEngineProcessFrame()
 		return;
 	}
 
-	_publicContext.time = GetTime();
-	_publicContext.frameDeltaTime = GetFrameTime();
-
 	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++) {
 		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
 		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
@@ -349,6 +395,11 @@ void GEngineProcessFrame()
 
 		if (systemInfo->subsystem.FrameEnd)
 			systemInfo->subsystem.FrameEnd();
+	}
+
+	if (_publicContext.gizmosEnabled)
+	{
+		_GEngineFlushGizmos();
 	}
 
 	EndDrawing();
@@ -470,6 +521,239 @@ void GEngineMakeNewScene()
 	}
 
 	GECS_ClearECS();
+}
+
+/*
+ * ========== GIZMOS ==========
+ */
+
+void GEngineGizmosText(const char* text, Vector2 pos, int fontSize, Color color)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	if (!text) {
+		GENGINE_LOG_MISUSE("text is NULL");
+		return;
+	}
+
+	else if (!fontSize) {
+		GENGINE_LOG_MISUSE("fontSize is 0");
+		return;
+	}
+
+	GEngineGizmosCommand2D cmd = {0};
+	cmd.type = GENGINE_GIZMOS_TEXT;
+
+	cmd.args.text.str = _strdup(text);
+	cmd.args.text.pos = pos;
+	cmd.args.text.fontSize = fontSize;
+	cmd.args.text.color = color;
+	DyArrayAddElement(&_privateContext.gizmosRenderingCommandQueue2D, &cmd);
+}
+
+void GEngineGizmosSphere(Vector3 position, float radius, Color color, bool wireframe)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	GEngineGizmosCommand3D cmd = {0};
+	cmd.type = GENGINE_GIZMOS_SPHERE;
+
+	cmd.args.sphere.pos = position;
+	cmd.args.sphere.radius = radius;
+	cmd.args.sphere.color = color;
+	cmd.args.sphere.wireframe = wireframe;
+	DyArrayAddElement(&_privateContext.gizmosRenderingCommandQueue3D, &cmd);
+}
+
+void GEngineGizmosArrow2D(Vector2 pos, Vector2 dir, float thickness, Color color)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	GEngineGizmosCommand2D cmd = {0};
+	cmd.type = GENGINE_GIZMOS_ARROW_2D;
+
+	cmd.args.arrow2D.pos = pos;
+	cmd.args.arrow2D.dir = dir;
+	cmd.args.arrow2D.color = color;
+	cmd.args.arrow2D.thickness = thickness;
+	DyArrayAddElement(&_privateContext.gizmosRenderingCommandQueue2D, &cmd);
+}
+
+void GEngineGizmosArrow3D(Vector3 pos, Vector3 dir, float radius, Color color)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	GEngineGizmosCommand3D cmd = {0};
+	cmd.type = GENGINE_GIZMOS_ARROW_3D;
+
+	cmd.args.arrow3D.pos = pos;
+	cmd.args.arrow3D.dir = dir;
+	cmd.args.arrow3D.radius = radius;
+	cmd.args.arrow3D.color = color;
+	DyArrayAddElement(&_privateContext.gizmosRenderingCommandQueue3D, &cmd);
+}
+
+void GEngineGizmosLine(Vector2 start, Vector2 end, Color color)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	GEngineGizmosCommand2D cmd = {0};
+	cmd.type = GENGINE_GIZMOS_LINE;
+
+	cmd.args.line.start = start;
+	cmd.args.line.end = end;
+	cmd.args.line.color = color;
+	DyArrayAddElement(&_privateContext.gizmosRenderingCommandQueue2D, &cmd);
+}
+
+void GEngineGizmosRect(Rectangle rect, Color color, bool fill)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	GEngineGizmosCommand2D cmd = {0};
+	cmd.type = GENGINE_GIZMOS_RECT;
+
+	cmd.args.rect.rect = rect;
+	cmd.args.rect.color = color;
+	cmd.args.rect.fill = fill;
+	DyArrayAddElement(&_privateContext.gizmosRenderingCommandQueue2D, &cmd);
+}
+
+//Don't worry abound BeginDrawing since the caller cares for it, but do call BeginMode2/3D.
+void _GEngineFlushGizmos()
+{
+	BeginMode2D(_publicContext.mainCamera2D);
+
+	for (size_t i = 0; i < _privateContext.gizmosRenderingCommandQueue2D.elementCount; i++)
+	{
+		GEngineGizmosCommand2D* cmd = DyArrayGetElement(&_privateContext.gizmosRenderingCommandQueue2D, i);
+
+		switch (cmd->type)
+		{
+			case GENGINE_GIZMOS_TEXT:
+				DrawText(cmd->args.text.str, cmd->args.text.pos.x, cmd->args.text.pos.y, cmd->args.text.fontSize, cmd->args.text.color);
+				free((void*)cmd->args.text.str);
+				break;
+			case GENGINE_GIZMOS_ARROW_2D:
+				float length = Vector2Length(cmd->args.arrow2D.dir);
+			    if (length == 0.0f) return;
+
+			    Vector2 end = Vector2Add(cmd->args.arrow2D.pos, cmd->args.arrow2D.dir);
+
+			    Vector2 normDir = Vector2Scale(cmd->args.arrow2D.dir, 1.0f / length);
+
+			    float tipLength = 3.0f * cmd->args.arrow2D.thickness;
+
+			    if (tipLength > length) tipLength = length;
+
+			    float tipWidth = tipLength;
+
+			    Vector2 bodyEnd = Vector2Subtract(end, Vector2Scale(normDir, tipLength));
+
+			    DrawLineEx(cmd->args.arrow2D.pos, bodyEnd, cmd->args.arrow2D.thickness, cmd->args.arrow2D.color);
+
+			    Vector2 perp = { -normDir.y, normDir.x };
+
+			    Vector2 p1 = end;
+			    Vector2 p2 = Vector2Add(bodyEnd, Vector2Scale(perp, tipWidth / 2.0f));
+			    Vector2 p3 = Vector2Subtract(bodyEnd, Vector2Scale(perp, tipWidth / 2.0f));
+
+			    DrawTriangle(p1, p2, p3, cmd->args.arrow2D.color);
+			    DrawTriangle(p1, p3, p2, cmd->args.arrow2D.color);
+				break;
+			case GENGINE_GIZMOS_LINE:
+				DrawLine(cmd->args.line.start.x, cmd->args.line.start.y, cmd->args.line.end.x, cmd->args.line.end.y, cmd->args.line.color);
+				break;
+			case GENGINE_GIZMOS_RECT:
+				if (cmd->args.rect.fill) {
+					DrawRectangleRec(cmd->args.rect.rect, cmd->args.rect.color);
+					break;
+				}
+
+				DrawRectangleLines(cmd->args.rect.rect.x, cmd->args.rect.rect.y, cmd->args.rect.rect.width, cmd->args.rect.rect.height, cmd->args.rect.color);
+				break;
+			default:
+				break;
+		}
+	}
+
+	EndMode2D();
+
+	BeginMode3D(_publicContext.mainCamera3D);
+
+	for (size_t i = 0; i < _privateContext.gizmosRenderingCommandQueue3D.elementCount; i++)
+	{
+		GEngineGizmosCommand3D* cmd = DyArrayGetElement(&_privateContext.gizmosRenderingCommandQueue3D, i);
+
+		switch (cmd->type)
+		{
+			case GENGINE_GIZMOS_SPHERE:
+				if (cmd->args.sphere.wireframe) {
+					DrawSphereWires(cmd->args.sphere.pos, cmd->args.sphere.radius, 8, 16, cmd->args.sphere.color);
+					break;
+				}
+
+				DrawSphere(cmd->args.sphere.pos, cmd->args.sphere.radius, cmd->args.sphere.color);
+				break;
+			case GENGINE_GIZMOS_ARROW_3D:
+				float length = Vector3Length(cmd->args.arrow3D.dir);
+				if (length == 0.0f) return;
+
+				Vector3 end = Vector3Add(cmd->args.arrow3D.pos, cmd->args.arrow3D.dir);
+
+				Vector3 normDir = Vector3Scale(cmd->args.arrow3D.dir, 1.0f / length);
+
+				float tipLength = cmd->args.arrow3D.radius * 4.0f;
+				if (tipLength > length) tipLength = length;
+
+				Vector3 bodyEnd = Vector3Subtract(end, Vector3Scale(normDir, tipLength));
+
+				DrawCylinderEx(cmd->args.arrow3D.pos, bodyEnd, cmd->args.arrow3D.radius, cmd->args.arrow3D.radius, 8, cmd->args.arrow3D.color); // Corpo
+				DrawCylinderEx(bodyEnd, end, cmd->args.arrow3D.radius * 2.5f, 0.0f, 8, cmd->args.arrow3D.color); // Punta
+				break;
+			default:
+				break;
+		}
+	}
+
+	EndMode3D();
+
+	DyArrayClear(&_privateContext.gizmosRenderingCommandQueue2D);
+	DyArrayClear(&_privateContext.gizmosRenderingCommandQueue3D);
+}
+
+Rectangle GEngineGetCamera2DRect()
+{
+	//Should take enlarged bounding box to take rotation into account
+
+	Vector2 camTopLeft = GetScreenToWorld2D((Vector2){0, 0}, _publicContext.mainCamera2D);
+
+	Vector2 camBottomRight = GetScreenToWorld2D((Vector2){GetScreenWidth(), GetScreenHeight()}, _publicContext.mainCamera2D);
+
+	return (Rectangle){
+	    camTopLeft.x,
+	    camTopLeft.y,
+	    camBottomRight.x - camTopLeft.x,
+	    camBottomRight.y - camTopLeft.y
+	};
 }
 
 /*
