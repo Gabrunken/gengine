@@ -32,7 +32,7 @@ void InstantiateTileAtMousePosition(int depth)
 
 	Transform2DComponent transform;
 	transform.position = finalPos;
-	transform.scale = (Vector2){1,1};
+	transform.scale = (Vector2){2,2};
 	transform.rotation = 0;
 	GEngineAttachComponent(gameObject, GEngine->defaultComponents.transform2D, &transform);
 

@@ -36,8 +36,8 @@ void SpriteSystem(GameObjectID gameObjectID, void** components)
     float realHeight = sprite->spriteSheetEntry.rect.height * transform->scale.y;
 
     Rectangle spriteRect = {
-        transform->position.x - (realWidth / 2.0f),
-        transform->position.y - (realHeight / 2.0f),
+        transform->position.x - (realWidth * sprite->pivot.x),
+        transform->position.y - (realHeight * sprite->pivot.y),
         realWidth,
         realHeight
     };
