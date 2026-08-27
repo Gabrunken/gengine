@@ -1,7 +1,13 @@
-#ifndef GENGINE_SPRITE_SYSTEMS_H_
-#define GENGINE_SPRITE_SYSTEMS_H_
+#ifndef GENGINE_SPRITE_SYSTEM_H_
+#define GENGINE_SPRITE_SYSTEM_H_
+#include "raylib.h"
 #include <gengine.h>
-#include <default_components.h>
+
+typedef struct
+{
+    Texture2D spriteSheet;
+    Rectangle rect;
+} GEngineSpriteSheetEntry;
 
 void SpriteStartUp();
 void SpriteFrameStart();

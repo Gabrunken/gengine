@@ -1,6 +1,7 @@
 #include "dyarray.h"
 #include <sprite_system.h>
 #include <stdlib.h>
+#include <default_components.h>
 
 extern GEnginePublicContext _publicContext;
 
@@ -31,8 +32,8 @@ void SpriteSystem(GameObjectID gameObjectID, void** components)
 	SpriteComponent* sprite = components[1];
 	uint16_t depth = sprite->depth; //Lower means further away (in the background)
 
-	float realWidth = sprite->texture.width * transform->scale.x;
-    float realHeight = sprite->texture.height * transform->scale.y;
+	float realWidth = sprite->spriteSheetEntry.rect.width * transform->scale.x;
+    float realHeight = sprite->spriteSheetEntry.rect.height * transform->scale.y;
 
     Rectangle spriteRect = {
         transform->position.x - (realWidth / 2.0f),
@@ -81,11 +82,12 @@ void SpriteFrameEnd()
 	    DrawCommand* cmd = DyArrayGetElement(&drawCommandQueue, targetIndex);
 
 		Rectangle dest = {cmd->transform.position.x, cmd->transform.position.y,
-			cmd->transform.scale.x * cmd->sprite.texture.width, cmd->transform.scale.y * cmd->sprite.texture.height};
+			cmd->transform.scale.x * cmd->sprite.spriteSheetEntry.rect.width, cmd->transform.scale.y * cmd->sprite.spriteSheetEntry.rect.height};
 
 		DrawTexturePro(
-			cmd->sprite.texture,
-			(Rectangle){0,0,cmd->sprite.texture.width,cmd->sprite.texture.height},
+			cmd->sprite.spriteSheetEntry.spriteSheet,
+			(Rectangle){cmd->sprite.spriteSheetEntry.rect.x, cmd->sprite.spriteSheetEntry.rect.y,
+						cmd->sprite.spriteSheetEntry.rect.width, cmd->sprite.spriteSheetEntry.rect.height},
 		 	dest, (Vector2){dest.width / 2.0f, dest.height / 2.0f}, cmd->transform.rotation, cmd->sprite.tint);
 	}
 

@@ -33,11 +33,16 @@ add_library(genginelib STATIC ${SOURCES})
 
 target_include_directories(genginelib PUBLIC include include/systems)
 target_link_libraries(genginelib PUBLIC gecslib raylib)
-target_compile_definitions(genginelib PRIVATE GENGINE_DEBUG_LOG)
 
-option(GENGINE_BUILD_TEST "Build the test" ON)
+option(OPTION_GENGINE_DEBUG_LOG "Enable debug logs" ON)
 
-if(GENGINE_BUILD_TEST)
+if (OPTION_GENGINE_DEBUG_LOG)
+	target_compile_definitions(genginelib PRIVATE GENGINE_DEBUG_LOG)
+endif()
+
+option(OPTION_GENGINE_BUILD_TEST "Build the test" ON)
+
+if(OPTION_GENGINE_BUILD_TEST)
     add_executable(gengine_test "test/main.c")
     target_link_libraries(gengine_test PRIVATE genginelib)
 endif()

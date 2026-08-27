@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <default_components.h>
 #include <default_systems.h>
 
 #ifdef GENGINE_DEBUG_LOG
@@ -142,7 +143,7 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 
 	_publicContext.defaultComponents.sprite = GECS_RegisterComponent(sizeof(SpriteComponent), "Sprite",
 	 3,
-	 GENGINE_FIELD_TYPE_TEXTURE, "texture",
+	 GENGINE_FIELD_TYPE_SPRITESHEET_ENTRY, "spriteSheetEntry",
 	 GENGINE_FIELD_TYPE_COLOR, "tint",
 	 GENGINE_FIELD_TYPE_UINT16_T, "depth");
 

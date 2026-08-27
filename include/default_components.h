@@ -2,6 +2,7 @@
 #define GENGINE_DEFAULT_COMPONENTS_H_
 
 #include "raylib.h"
+#include <sprite_system.h>
 #include <stdint.h>
 
 typedef enum
@@ -25,6 +26,8 @@ typedef enum
 
     GENGINE_FIELD_TYPE_VECTOR2,
     GENGINE_FIELD_TYPE_VECTOR3,
+
+    GENGINE_FIELD_TYPE_SPRITESHEET_ENTRY,
 } GEngineFieldType;
 
 typedef struct
@@ -36,7 +39,7 @@ typedef struct
 
 typedef struct
 {
-    Texture2D texture;
+    GEngineSpriteSheetEntry spriteSheetEntry;
     Color tint;
     uint16_t depth;
 } SpriteComponent;
