@@ -39,6 +39,7 @@ void InstantiateTileAtMousePosition(int depth)
 	SpriteComponent sprite;
 	sprite.spriteSheetEntry.spriteSheet = tile;
 	sprite.spriteSheetEntry.rect = (Rectangle){0,0,sprite.spriteSheetEntry.spriteSheet.width,sprite.spriteSheetEntry.spriteSheet.height};
+	sprite.pivot = (Vector2){0.5,0.5};
 	sprite.tint = tints[GetRandomValue(0, 9)];
 	sprite.depth = depth;
 	GEngineAttachComponent(gameObject, GEngine->defaultComponents.sprite, &sprite);

@@ -88,7 +88,7 @@ void SpriteFrameEnd()
 			cmd->sprite.spriteSheetEntry.spriteSheet,
 			(Rectangle){cmd->sprite.spriteSheetEntry.rect.x, cmd->sprite.spriteSheetEntry.rect.y,
 						cmd->sprite.spriteSheetEntry.rect.width, cmd->sprite.spriteSheetEntry.rect.height},
-		 	dest, (Vector2){dest.width / 2.0f, dest.height / 2.0f}, cmd->transform.rotation, cmd->sprite.tint);
+		 	dest, (Vector2){dest.width * cmd->sprite.pivot.x, dest.height * cmd->sprite.pivot.y}, cmd->transform.rotation, cmd->sprite.tint);
 	}
 
 	EndMode2D();

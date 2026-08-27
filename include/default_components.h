@@ -39,7 +39,14 @@ typedef struct
 
 typedef struct
 {
-    GEngineSpriteSheetEntry spriteSheetEntry;
+    Texture2D spriteSheet;
+    Rectangle rect;
+} SpriteSheetEntry;
+
+typedef struct
+{
+    SpriteSheetEntry spriteSheetEntry;
+    Vector2 pivot;
     Color tint;
     uint16_t depth;
 } SpriteComponent;

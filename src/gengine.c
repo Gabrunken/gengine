@@ -142,8 +142,9 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 	 GENGINE_FIELD_TYPE_FLOAT, "rotation");
 
 	_publicContext.defaultComponents.sprite = GECS_RegisterComponent(sizeof(SpriteComponent), "Sprite",
-	 3,
+	 4,
 	 GENGINE_FIELD_TYPE_SPRITESHEET_ENTRY, "spriteSheetEntry",
+	 GENGINE_FIELD_TYPE_VECTOR2, "pivot",
 	 GENGINE_FIELD_TYPE_COLOR, "tint",
 	 GENGINE_FIELD_TYPE_UINT16_T, "depth");
 
