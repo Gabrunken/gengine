@@ -424,25 +424,29 @@ void GEngineEndGame()
 	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++)
 	{
 		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
-		systemInfo->subsystem.CleanUp();
+		if (systemInfo->subsystem.CleanUp)
+			systemInfo->subsystem.CleanUp();
 	}
 
 	for (size_t i = 0; i < _privateContext.logicSubsystems.elementCount; i++)
 	{
 		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.logicSubsystems, i);
-		systemInfo->subsystem.CleanUp();
+		if (systemInfo->subsystem.CleanUp)
+			systemInfo->subsystem.CleanUp();
 	}
 
 	for (size_t i = 0; i < _privateContext.physicsSubsystems.elementCount; i++)
 	{
 		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.physicsSubsystems, i);
-		systemInfo->subsystem.CleanUp();
+		if (systemInfo->subsystem.CleanUp)
+			systemInfo->subsystem.CleanUp();
 	}
 
 	for (size_t i = 0; i < _privateContext.renderSubsystems.elementCount; i++)
 	{
 		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.renderSubsystems, i);
-		systemInfo->subsystem.CleanUp();
+		if (systemInfo->subsystem.CleanUp)
+			systemInfo->subsystem.CleanUp();
 	}
 
 	GEngineMakeNewScene();
