@@ -793,6 +793,16 @@ void GEngineDetachComponent(GameObjectID entity, GEngineComponentTypeID componen
 	GECS_DetachComponent((EntityID){entity.id, entity.gen}, componentTypeID);
 }
 
+void* GEngineGetComponent(GameObjectID entity, GEngineComponentTypeID componentTypeID)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return NULL;
+	}
+
+	return GECS_GetComponent((EntityID){entity.id, entity.gen}, componentTypeID);
+}
+
 GEngineScene* GEngineSaveScene(const char* name)
 {
 	if (!_privateContext.initialized) {
