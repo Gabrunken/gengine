@@ -17,38 +17,12 @@
  * since some systems might use the 2D camera and some might need the 3D camera, your choice.
  */
 
+#include "default_components.h"
 #include <stdint.h>
 #include <gizmos.h>
 #define GENGINE_SCENE_NAME_MAX_LENGTH 23
 
-typedef struct GEngineScene GEngineScene; //Forward declaration for opaque pointer.
-
-typedef struct {size_t id; size_t gen;} GameObjectID;
-typedef uint8_t GEngineComponentTypeID;
-typedef size_t GEngineSystemID;
-
-enum GEngineSystemType
-{
-    GENGINE_SUBSYSTEM_TYPE_INPUT,
-    GENGINE_SUBSYSTEM_TYPE_LOGIC,
-    GENGINE_SUBSYSTEM_TYPE_PHYSICS,
-    GENGINE_SUBSYSTEM_TYPE_RENDER,
-};
-
-typedef struct
-{
-    struct
-    {
-        GEngineComponentTypeID transform2D;
-        GEngineComponentTypeID sprite;
-    } defaultComponents;
-
-    Camera2D mainCamera2D;
-    Camera3D mainCamera3D;
-    Color backgroundColor;
-
-    bool gizmosEnabled;
-} GEnginePublicContext;
+#include <gengine_types.h>
 
 /*
  * Initialize the GEngine library and creates the window.
@@ -287,5 +261,14 @@ void* GEngineGetComponent(GameObjectID entity, GEngineComponentTypeID componentT
  * @return The entity's read-only info struct pointer.
  */
 //const EntityInfo* GEngineGetGameObjectInfo(GameObjectID entity);
+
+/*
+ * Built-in systems based functions
+ */
+
+/*
+ * Get the visible rect of a sprite, which may be transformed and scaled (rotation doesn't work right now)
+ */
+Rectangle GEngineGetVisibleSpriteRectangle(SpriteComponent* spriteComponent, Transform2DComponent* transformComponent);
 
 #endif

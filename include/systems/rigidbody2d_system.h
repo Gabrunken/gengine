@@ -1,6 +1,6 @@
 #ifndef GENGINE_RIGIDBODY2D_SYSTEM_H_
 #define GENGINE_RIGIDBODY2D_SYSTEM_H_
-#include <gengine.h>
+#include <gengine_types.h>
 
 void Rigidbody2DStartUp();
 void Rigidbody2DFrameStart();

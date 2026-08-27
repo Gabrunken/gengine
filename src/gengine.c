@@ -1025,3 +1025,26 @@ void GEngineLoadSceneFromDisk(const char* filePath)
 
 	GECS_MakeAndLoadSnapshotFromDisk(filePath);
 }
+
+Rectangle GEngineGetVisibleSpriteRectangle(SpriteComponent* spriteComponent, Transform2DComponent* transformComponent)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return (Rectangle) {0};
+	}
+
+	if (!spriteComponent || !transformComponent) {
+		GENGINE_LOG_MISUSE("arguments are not valid");
+		return (Rectangle) {0};
+	}
+
+	Rectangle realRect;
+
+	realRect.width = spriteComponent->spriteSheetEntry.rect.width * transformComponent->scale.x;
+	realRect.height = spriteComponent->spriteSheetEntry.rect.height * transformComponent->scale.y;
+
+	realRect.x = transformComponent->position.x - realRect.width * spriteComponent->pivot.x;
+	realRect.y = transformComponent->position.y - realRect.height * spriteComponent->pivot.y;
+
+	return realRect;
+}

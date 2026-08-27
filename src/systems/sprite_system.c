@@ -2,6 +2,7 @@
 #include <sprite_system.h>
 #include <stdlib.h>
 #include <default_components.h>
+#include <gengine.h>
 
 extern GEnginePublicContext _publicContext;
 

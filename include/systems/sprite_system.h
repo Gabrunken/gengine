@@ -1,6 +1,6 @@
 #ifndef GENGINE_SPRITE_SYSTEM_H_
 #define GENGINE_SPRITE_SYSTEM_H_
-#include <gengine.h>
+#include <gengine_types.h>
 
 void SpriteStartUp();
 void SpriteFrameStart();
