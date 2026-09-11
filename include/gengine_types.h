@@ -9,6 +9,31 @@ typedef struct {size_t id; size_t gen;} GameObjectID;
 typedef uint8_t GEngineComponentTypeID;
 typedef size_t GEngineSystemID;
 
+#define GENGINE_INVALID_EVENT_TYPE ULONG_LONG_MAX
+typedef size_t EventType;
+
+typedef struct
+{
+    GameObjectID id;
+} GameObjectCreatedEvent;
+
+typedef struct
+{
+    GameObjectID id;
+} GameObjectDeletedEvent;
+
+typedef struct
+{
+    GameObjectID gameObjectID;
+    GEngineComponentTypeID componentTypeID;
+} ComponentAttachedEvent;
+
+typedef struct
+{
+    GameObjectID gameObjectID;
+    GEngineComponentTypeID componentTypeID;
+} ComponentDetachedEvent;
+
 enum GEngineSystemType
 {
     GENGINE_SUBSYSTEM_TYPE_INPUT,
@@ -30,6 +55,14 @@ typedef struct
     Color backgroundColor;
 
     bool gizmosEnabled;
+
+    struct
+    {
+        EventType gameObjectCreated;
+        EventType gameObjectDeleted;
+        EventType componentAttached;
+        EventType componentDetached;
+    } defaultEventTypes;
 } GEnginePublicContext;
 
 #endif

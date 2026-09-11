@@ -1,115 +1,111 @@
-#include "default_components.h"
-#include "gizmos.h"
+#include "gengine.h"
 #include "raylib.h"
-#include <math.h>
 #include <stdio.h>
-#include <gengine.h>
-#include <stdint.h>
 
-Texture2D tile;
+#define MAX_ENTITIES 100
+#define LOG_MESSAGES 5
 
-Color tints[10] = {
-	YELLOW,
-	ORANGE,
-	PINK,
-	RED,
-	GREEN,
-	LIME,
-	DARKGREEN,
-	SKYBLUE,
-	PURPLE,
-	VIOLET,
-};
+// Stato simulato per il test visivo
+static Vector2 visualEntities[MAX_ENTITIES];
+static int entityCount = 0;
+static GameObjectID nextID = {1, 1};
+static GEnginePublicContext* ctx = NULL;
 
-GEnginePublicContext* GEngine;
-
-void InstantiateTileAtMousePosition(int depth)
-{
-	GameObjectID gameObject = GEngineCreateGameObject("tile");
-
-	Vector2 mousePos = GetMousePosition();
-	Vector2 finalPos = GetScreenToWorld2D(mousePos, GEngine->mainCamera2D);
-
-	Transform2DComponent transform;
-	transform.position = finalPos;
-	transform.scale = (Vector2){2,2};
-	transform.rotation = 0;
-	GEngineAttachComponent(gameObject, GEngine->defaultComponents.transform2D, &transform);
-
-	SpriteComponent sprite;
-	sprite.spriteSheetEntry.spriteSheet = tile;
-	sprite.spriteSheetEntry.rect = (Rectangle){0,0,sprite.spriteSheetEntry.spriteSheet.width,sprite.spriteSheetEntry.spriteSheet.height};
-	sprite.pivot = (Vector2){0.5,0.5};
-	sprite.tint = tints[GetRandomValue(0, 9)];
-	sprite.depth = depth;
-	GEngineAttachComponent(gameObject, GEngine->defaultComponents.sprite, &sprite);
+static char eventLog[LOG_MESSAGES][64] = {0};
+static void AddLogMessage(const char* message) {
+    for (int i = LOG_MESSAGES - 1; i > 0; i--) {
+        snprintf(eventLog[i], 64, "%s", eventLog[i-1]);
+    }
+    snprintf(eventLog[0], 64, "%s", message);
 }
 
-int main()
-{
-	GEngine = GEngineInitialize("GEngine Test", 512, 512);
-	if (!GEngine) {
-		printf("Failed to initialize gengine, terminate...");
-		return 1;
-	}
+// Callback fittizia obbligatoria per bypassare il check del subsystem
+void DummyCallback(GameObjectID id, void** components) {
+    (void)id;
+    (void)components;
+}
 
-	GEngine->backgroundColor = DARKBLUE;
+// --- SUBSYSTEM 1: INPUT ---
+void Input_FrameStart(void) {
+    if (IsKeyPressed(KEY_SPACE)) {
+        GameObjectCreatedEvent ev = { .id = nextID };
+        nextID.id++;
 
-	tile = LoadTexture("tile.png");
+        GEnginePushEvent(ctx->defaultEventTypes.gameObjectCreated, &ev);
+        AddLogMessage("[-] FRAME N: PUSH Creazione (Spazio)");
+    }
 
-	GEngineStartGame();
-	while (GEngineGameWantsToRun())
-	{
-		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-			int depth = GetRandomValue(0, UINT16_MAX);
-			InstantiateTileAtMousePosition(depth);
-		}
+    if (IsKeyPressed(KEY_BACKSPACE) && entityCount > 0) {
+        GameObjectDeletedEvent ev = { .id = {nextID.id - 1, 1} };
+        nextID.id--;
 
-		if (IsKeyDown(KEY_D)) {
-			GEngine->mainCamera2D.offset.x -= 250 * GetFrameTime();
-		}
+        GEnginePushEvent(ctx->defaultEventTypes.gameObjectDeleted, &ev);
+        AddLogMessage("[-] FRAME N: PUSH Distruzione (Backspace)");
+    }
+}
 
-		if (IsKeyDown(KEY_A)) {
-			GEngine->mainCamera2D.offset.x += 250 * GetFrameTime();
-		}
+// --- SUBSYSTEM 2: LOGICA ---
+void Logic_FrameStart(void) {
+    const dyarray createQueue = GEngineGetEventQueue(ctx->defaultEventTypes.gameObjectCreated);
+    for (size_t i = 0; i < createQueue.elementCount; i++) {
+        if (entityCount < MAX_ENTITIES) {
+            visualEntities[entityCount] = (Vector2){ GetRandomValue(100, 700), GetRandomValue(100, 500) };
+            entityCount++;
+            AddLogMessage("[+] FRAME N+1: READ Creazione Eseguita");
+        }
+    }
 
-		if (IsKeyDown(KEY_W)) {
-			GEngine->mainCamera2D.offset.y += 250 * GetFrameTime();
-		}
+    const dyarray deleteQueue = GEngineGetEventQueue(ctx->defaultEventTypes.gameObjectDeleted);
+    for (size_t i = 0; i < deleteQueue.elementCount; i++) {
+        if (entityCount > 0) {
+            entityCount--;
+            AddLogMessage("[+] FRAME N+1: READ Distruzione Eseguita");
+        }
+    }
+}
 
-		if (IsKeyDown(KEY_S)) {
-			GEngine->mainCamera2D.offset.y -= 250 * GetFrameTime();
-		}
+// --- SUBSYSTEM 3: RENDER ---
+void Render_FrameStart(void) {
+    BeginMode2D(ctx->mainCamera2D);
+}
 
-		if (IsKeyDown(KEY_Q)) {
-			GEngine->mainCamera2D.rotation += 20 * GetFrameTime();
-		}
+void Render_FrameEnd(void) {
+    for (int i = 0; i < entityCount; i++) {
+        DrawCircleV(visualEntities[i], 20.0f, MAROON);
+        DrawText(TextFormat("ID:%d", i+1), visualEntities[i].x - 15, visualEntities[i].y - 30, 10, DARKGRAY);
+    }
+    EndMode2D();
 
-		if (IsKeyDown(KEY_E)) {
-			GEngine->mainCamera2D.rotation -= 20 * GetFrameTime();
-		}
+    DrawText("Premi SPAZIO per spawnare (Push Evento)", 10, 10, 20, DARKGRAY);
+    DrawText("Premi BACKSPACE per distruggere (Push Evento)", 10, 40, 20, DARKGRAY);
 
-		if (IsKeyPressed(KEY_M)) {
-			GEngine->gizmosEnabled = !GEngine->gizmosEnabled;
-		}
+    for (int i = 0; i < LOG_MESSAGES; i++) {
+        DrawText(eventLog[i], 10, 530 + (i * 15), 10, i == 0 ? DARKGREEN : GRAY);
+    }
+}
 
-		Rectangle cameraRect = GEngineGetCamera2DRect();
-		cameraRect.x += 10;
-		cameraRect.y += 10;
-		cameraRect.width -= 20;
-		cameraRect.height -= 20;
+// --- MAIN ---
+int main(void) {
+    ctx = GEngineInitialize("GEngine - Event Double Buffer Test", 800, 600);
+    if (!ctx) return -1;
 
-		//UpdateCamera(&GEngine->mainCamera3D, CAMERA_FREE);
+    ctx->backgroundColor = RAYWHITE;
+    ctx->mainCamera2D.zoom = 1.0f;
 
-		GEngineGizmosText(TextFormat("FPS: %i", GetFPS()), (Vector2){10, 10}, 20, GREEN);
-		//GEngineGizmosRect(cameraRect, RED, false);
-		GEngineGizmosArrow3D((Vector3){0, 0, -10}, (Vector3){0, sin(GetTime()) * 5, 0}, 0.1f, RED);
-		GEngineGizmosArrow2D((Vector2){0, 0}, (Vector2){cameraRect.x, cameraRect.y}, 5, GREEN);
-		GEngineProcessFrame();
-	}
+    // Registriamo un componente fittizio senza campi (size = sizeof(int) per sicurezza di allocazione)
+    GEngineComponentTypeID dummyComp = GEngineRegisterComponent(sizeof(int), "DummyComponent", 0);
 
-	GEngineTerminate();
+    // Registrazione dei Subsystem passando la callback vuota, 1 componente, e l'ID del dummyComp
+    GEngineRegisterSubSystem(NULL, NULL, Input_FrameStart, DummyCallback, NULL, GENGINE_SUBSYSTEM_TYPE_INPUT, false, 1, dummyComp);
+    GEngineRegisterSubSystem(NULL, NULL, Logic_FrameStart, DummyCallback, NULL, GENGINE_SUBSYSTEM_TYPE_LOGIC, false, 1, dummyComp);
+    GEngineRegisterSubSystem(NULL, NULL, Render_FrameStart, DummyCallback, Render_FrameEnd, GENGINE_SUBSYSTEM_TYPE_RENDER, false, 1, dummyComp);
 
-	UnloadTexture(tile);
+    GEngineStartGame();
+
+    while (GEngineGameWantsToRun()) {
+        GEngineProcessFrame();
+    }
+
+    GEngineTerminate();
     return 0;
 }

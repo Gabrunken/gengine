@@ -1,4 +1,5 @@
 #include "dyarray.h"
+#include "gengine_types.h"
 #include "raylib.h"
 #include "raymath.h"
 #include <gengine.h>
@@ -95,6 +96,10 @@ typedef struct
 	dyarray physicsSubsystems;
 	dyarray inputSubsystems;
 
+	//Contains a dyarray for each EventType
+	dyarray backEventQueues; //The current's frame events (write here)
+	dyarray frontEventQueues; //The previous' frame events (read here)
+
 	dyarray gizmosRenderingCommandQueue2D;
 	dyarray gizmosRenderingCommandQueue3D;
 
@@ -118,6 +123,11 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 		!DyArrayCreate(&_privateContext.logicSubsystems, sizeof(GEngineSubSystemInfo), 10) 	 ||
 		!DyArrayCreate(&_privateContext.physicsSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
 		!DyArrayCreate(&_privateContext.renderSubsystems, sizeof(GEngineSubSystemInfo), 10)) {
+		goto error;
+	}
+
+	if (!DyArrayCreate(&_privateContext.backEventQueues, sizeof(dyarray), 10) ||
+		!DyArrayCreate(&_privateContext.frontEventQueues, sizeof(dyarray), 10)) {
 		goto error;
 	}
 
@@ -170,6 +180,12 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 	_publicContext.mainCamera3D.projection = CAMERA_PERSPECTIVE;
 
 	_publicContext.gizmosEnabled = true;
+
+	//Register default event types.
+	_publicContext.defaultEventTypes.gameObjectCreated = GEngineRegisterEventType(sizeof(GameObjectCreatedEvent));
+	_publicContext.defaultEventTypes.gameObjectDeleted = GEngineRegisterEventType(sizeof(GameObjectDeletedEvent));
+	_publicContext.defaultEventTypes.componentAttached = GEngineRegisterEventType(sizeof(ComponentAttachedEvent));
+	_publicContext.defaultEventTypes.componentDetached = GEngineRegisterEventType(sizeof(ComponentDetachedEvent));
 
 	GENGINE_LOG_NOTE("engine initialized");
 	return &_publicContext;
@@ -405,6 +421,18 @@ void GEngineProcessFrame()
 	}
 
 	EndDrawing();
+
+	//Swap event back and front buffer
+	{
+		dyarray tmp = _privateContext.frontEventQueues;
+		_privateContext.frontEventQueues = _privateContext.backEventQueues;
+		_privateContext.backEventQueues = tmp;
+
+		for (size_t i = 0; i < _privateContext.backEventQueues.elementCount; i++) {
+			dyarray* queue = DyArrayGetElement(&_privateContext.backEventQueues, i);
+			DyArrayClear(queue);
+		}
+	}
 
 	GECS_ProcessFrameEnd();
 }
@@ -762,6 +790,69 @@ Rectangle GEngineGetCamera2DRect()
 	};
 }
 
+EventType GEngineRegisterEventType(size_t eventStructSize)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return GENGINE_INVALID_EVENT_TYPE;
+	}
+
+	if (eventStructSize == 0) {
+		GENGINE_LOG_MISUSE("eventStructSize is 0");
+		return GENGINE_INVALID_EVENT_TYPE;
+	}
+
+	dyarray newFrontQueue;
+	dyarray newBackQueue;
+	if (!DyArrayCreate(&newFrontQueue, eventStructSize, 100) ||
+		!DyArrayCreate(&newBackQueue, eventStructSize, 100)) {
+		GENGINE_LOG_ERROR("failed to allocate new event queue");
+		if (newFrontQueue.buf) DyArrayFree(&newFrontQueue);
+		return GENGINE_INVALID_EVENT_TYPE;
+	}
+
+	DyArrayAddElement(&_privateContext.backEventQueues, &newBackQueue);
+	DyArrayAddElement(&_privateContext.frontEventQueues, &newFrontQueue);
+	return _privateContext.backEventQueues.elementCount - 1;
+}
+
+const dyarray GEngineGetEventQueue(EventType type)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return (const dyarray){0};
+	}
+
+	if (type >= _privateContext.frontEventQueues.elementCount || type == GENGINE_INVALID_EVENT_TYPE) {
+		GENGINE_LOG_MISUSE("passed event type is invalid (%zu)", type);
+		return (const dyarray){0};
+	}
+
+	dyarray* queue = DyArrayGetElement(&_privateContext.frontEventQueues, type);
+	return *queue;
+}
+
+void GEnginePushEvent(EventType type, void* eventData)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	if (type >= _privateContext.frontEventQueues.elementCount || type == GENGINE_INVALID_EVENT_TYPE) {
+		GENGINE_LOG_MISUSE("passed event type is invalid (%zu)", type);
+		return;
+	}
+
+	if (!eventData) {
+		GENGINE_LOG_MISUSE("eventData is NULL");
+		return;
+	}
+
+	dyarray* queue = DyArrayGetElement(&_privateContext.backEventQueues, type);
+	DyArrayAddElement(queue, eventData); //EventData should exactly be the size of the struct related to the passed EventType.
+}
+
 /*
  * WORK IN PROGRESS FROM HERE
  */
@@ -773,8 +864,28 @@ GameObjectID GEngineCreateGameObject(const char* name)
 		return (GameObjectID){0};
 	}
 
+
 	EntityID id = GECS_CreateEntity(name);
-	return (GameObjectID){id.id, id.gen};
+	GameObjectID gmID = (GameObjectID){id.id, id.gen};
+
+	GameObjectCreatedEvent event = {.id = gmID};
+	GEnginePushEvent(_publicContext.defaultEventTypes.gameObjectCreated, &event);
+
+	return gmID;
+}
+
+void GEngineDeleteGameObject(GameObjectID entity)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return;
+	}
+
+	EntityID id = (EntityID){entity.id, entity.gen};
+	GECS_DeleteEntity(id);
+
+	GameObjectDeletedEvent event = {.id = entity};
+	GEnginePushEvent(_publicContext.defaultEventTypes.gameObjectDeleted, &event);
 }
 
 //The heavy lifting of checking if an entity exists, if a component exists etc... is done by the ecs, so no worries.
@@ -785,6 +896,9 @@ void GEngineAttachComponent(GameObjectID entity, GEngineComponentTypeID componen
 		return;
 	}
 
+	ComponentAttachedEvent event = {.gameObjectID = entity, .componentTypeID = componentTypeID};
+	GEnginePushEvent(_publicContext.defaultEventTypes.componentAttached, &event);
+
 	GECS_AttachComponent((EntityID){entity.id, entity.gen}, componentTypeID, componentData);
 }
 
@@ -794,6 +908,9 @@ void GEngineDetachComponent(GameObjectID entity, GEngineComponentTypeID componen
 		GENGINE_LOG_MISUSE("engine is not yet initialized");
 		return;
 	}
+
+	ComponentDetachedEvent event = {.gameObjectID = entity, .componentTypeID = componentTypeID};
+	GEnginePushEvent(_publicContext.defaultEventTypes.componentAttached, &event);
 
 	GECS_DetachComponent((EntityID){entity.id, entity.gen}, componentTypeID);
 }

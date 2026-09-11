@@ -15,9 +15,12 @@
  * ANOTHER NOTE
  * When you draw, it is your responsibility to wrap your draw commands in BeginMode2/3D followed by EndMode2/3D,
  * since some systems might use the 2D camera and some might need the 3D camera, your choice.
+ * But don't call BeginDrawing / EndDrawing!!! They are already called.
  */
 
+#include <dyarray.h>
 #include "default_components.h"
+#include <limits.h>
 #include <stdint.h>
 #include <gizmos.h>
 #define GENGINE_SCENE_NAME_MAX_LENGTH 23
@@ -93,6 +96,25 @@ void GEngineProcessFrame();
 void GEngineEndGame();
 
 Rectangle GEngineGetCamera2DRect();
+
+/*
+ * Register an event type inside the system.
+ * "eventStructSize" is the size in bytes of the event's struct, containing its payload. (you define that)
+ * On failure, it returns GENGINE_INVALID_EVENT_TYPE.
+ */
+EventType GEngineRegisterEventType(size_t eventStructSize);
+
+/*
+ * Get the current's frame event queue, for a specified type of event.
+ * Note, do not fucking modify the returned array, it is READ-ONLY.
+ */
+const dyarray GEngineGetEventQueue(EventType type);
+
+/*
+ * Push an event in the queue.
+ * "eventData" is a pointer to the Event struct corresponding to "type".
+ */
+void GEnginePushEvent(EventType type, void* eventData);
 
 /*
  * ======================================
