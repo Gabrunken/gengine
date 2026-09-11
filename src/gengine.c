@@ -91,10 +91,9 @@ typedef struct
 typedef struct
 {
 	bool initialized;
-	dyarray renderSubsystems;
 	dyarray logicSubsystems;
 	dyarray physicsSubsystems;
-	dyarray inputSubsystems;
+	dyarray renderSubsystems;
 
 	//Contains a dyarray for each EventType
 	dyarray backEventQueues; //The current's frame events (write here)
@@ -119,8 +118,7 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 		return NULL;
 	}
 
-	if (!DyArrayCreate(&_privateContext.inputSubsystems, sizeof(GEngineSubSystemInfo), 10) 	 ||
-		!DyArrayCreate(&_privateContext.logicSubsystems, sizeof(GEngineSubSystemInfo), 10) 	 ||
+	if (!DyArrayCreate(&_privateContext.logicSubsystems, sizeof(GEngineSubSystemInfo), 10) 	 ||
 		!DyArrayCreate(&_privateContext.physicsSubsystems, sizeof(GEngineSubSystemInfo), 10) ||
 		!DyArrayCreate(&_privateContext.renderSubsystems, sizeof(GEngineSubSystemInfo), 10)) {
 		goto error;
@@ -191,8 +189,6 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 	return &_publicContext;
 
 	error:
-	if (_privateContext.inputSubsystems.buf)
-		DyArrayFree(&_privateContext.inputSubsystems);
 	if (_privateContext.logicSubsystems.buf)
 		DyArrayFree(&_privateContext.logicSubsystems);
 	if (_privateContext.physicsSubsystems.buf)
@@ -211,7 +207,6 @@ void GEngineTerminate()
 		return;
 	}
 
-	DyArrayFree(&_privateContext.inputSubsystems);
 	DyArrayFree(&_privateContext.logicSubsystems);
 	DyArrayFree(&_privateContext.physicsSubsystems);
 	DyArrayFree(&_privateContext.renderSubsystems);
@@ -271,8 +266,6 @@ GEngineSystemID GEngineRegisterSubSystem(
 	case GENGINE_SUBSYSTEM_TYPE_PHYSICS:
 		DyArrayAddElement(&_privateContext.physicsSubsystems, &systemInfo);
 		break;
-	case GENGINE_SUBSYSTEM_TYPE_INPUT:
-		DyArrayAddElement(&_privateContext.inputSubsystems, &systemInfo);
 		break;
 	default:
 		break;
@@ -313,13 +306,6 @@ void GEngineStartGame()
 		return;
 	}
 
-	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++)
-	{
-		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
-		if (systemInfo->subsystem.StartUp)
-			systemInfo->subsystem.StartUp();
-	}
-
 	for (size_t i = 0; i < _privateContext.logicSubsystems.elementCount; i++)
 	{
 		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.logicSubsystems, i);
@@ -354,20 +340,6 @@ void GEngineProcessFrame()
 	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return;
-	}
-
-	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++) {
-		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
-		if (_privateContext.gamePaused && !systemInfo->runOnPause) continue;
-
-		if (systemInfo->subsystem.FrameStart)
-			systemInfo->subsystem.FrameStart();
-
-		SystemID id = (SystemID)systemInfo->subsystem.system;
-		GECS_ExecuteSystem(id);
-
-		if (systemInfo->subsystem.FrameEnd)
-			systemInfo->subsystem.FrameEnd();
 	}
 
 	for (size_t i = 0; i < _privateContext.logicSubsystems.elementCount; i++) {
@@ -447,13 +419,6 @@ void GEngineEndGame()
 	if (!_privateContext.gameStarted) {
 		GENGINE_LOG_MISUSE("game has not been started yet");
 		return;
-	}
-
-	for (size_t i = 0; i < _privateContext.inputSubsystems.elementCount; i++)
-	{
-		GEngineSubSystemInfo* systemInfo = DyArrayGetElement(&_privateContext.inputSubsystems, i);
-		if (systemInfo->subsystem.CleanUp)
-			systemInfo->subsystem.CleanUp();
 	}
 
 	for (size_t i = 0; i < _privateContext.logicSubsystems.elementCount; i++)
