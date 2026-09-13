@@ -1,109 +1,63 @@
 #include "gengine.h"
-#include "raylib.h"
 #include <stdio.h>
+#include <stddef.h> // Obbligatorio per usare offsetof()
 
-#define MAX_ENTITIES 100
-#define LOG_MESSAGES 5
+// 1. Definiamo un componente con tipi di dimensioni diverse per generare padding
+typedef struct {
+    uint8_t id;         // 1 byte
+                        // 3 byte di padding automatico del C
+    float speed;        // 4 byte
+    Vector2 position;   // 8 byte (assumendo struct di 2 float)
+    bool isAlive;       // 1 byte
+                        // 3 byte di padding finale per allineamento
+} MovementData;
 
-// Stato simulato per il test visivo
-static Vector2 visualEntities[MAX_ENTITIES];
-static int entityCount = 0;
-static GameObjectID nextID = {1, 1};
-static GEnginePublicContext* ctx = NULL;
-
-static char eventLog[LOG_MESSAGES][64] = {0};
-static void AddLogMessage(const char* message) {
-    for (int i = LOG_MESSAGES - 1; i > 0; i--) {
-        snprintf(eventLog[i], 64, "%s", eventLog[i-1]);
-    }
-    snprintf(eventLog[0], 64, "%s", message);
-}
-
-// Callback fittizia obbligatoria per bypassare il check del subsystem
-void DummyCallback(GameObjectID id, void** components) {
-    (void)id;
-    (void)components;
-}
-
-// --- SUBSYSTEM 1: INPUT ---
-void Input_FrameStart(void) {
-    if (IsKeyPressed(KEY_SPACE)) {
-        GameObjectCreatedEvent ev = { .id = nextID };
-        nextID.id++;
-
-        GEnginePushEvent(ctx->defaultEventTypes.gameObjectCreated, &ev);
-        AddLogMessage("[-] FRAME N: PUSH Creazione (Spazio)");
-    }
-
-    if (IsKeyPressed(KEY_BACKSPACE) && entityCount > 0) {
-        GameObjectDeletedEvent ev = { .id = {nextID.id - 1, 1} };
-        nextID.id--;
-
-        GEnginePushEvent(ctx->defaultEventTypes.gameObjectDeleted, &ev);
-        AddLogMessage("[-] FRAME N: PUSH Distruzione (Backspace)");
-    }
-}
-
-// --- SUBSYSTEM 2: LOGICA ---
-void Logic_FrameStart(void) {
-    const dyarray createQueue = GEngineGetEventQueue(ctx->defaultEventTypes.gameObjectCreated);
-    for (size_t i = 0; i < createQueue.elementCount; i++) {
-        if (entityCount < MAX_ENTITIES) {
-            visualEntities[entityCount] = (Vector2){ GetRandomValue(100, 700), GetRandomValue(100, 500) };
-            entityCount++;
-            AddLogMessage("[+] FRAME N+1: READ Creazione Eseguita");
-        }
-    }
-
-    const dyarray deleteQueue = GEngineGetEventQueue(ctx->defaultEventTypes.gameObjectDeleted);
-    for (size_t i = 0; i < deleteQueue.elementCount; i++) {
-        if (entityCount > 0) {
-            entityCount--;
-            AddLogMessage("[+] FRAME N+1: READ Distruzione Eseguita");
-        }
-    }
-}
-
-// --- SUBSYSTEM 3: RENDER ---
-void Render_FrameStart(void) {
-    BeginMode2D(ctx->mainCamera2D);
-}
-
-void Render_FrameEnd(void) {
-    for (int i = 0; i < entityCount; i++) {
-        DrawCircleV(visualEntities[i], 20.0f, MAROON);
-        DrawText(TextFormat("ID:%d", i+1), visualEntities[i].x - 15, visualEntities[i].y - 30, 10, DARKGRAY);
-    }
-    EndMode2D();
-
-    DrawText("Premi SPAZIO per spawnare (Push Evento)", 10, 10, 20, DARKGRAY);
-    DrawText("Premi BACKSPACE per distruggere (Push Evento)", 10, 40, 20, DARKGRAY);
-
-    for (int i = 0; i < LOG_MESSAGES; i++) {
-        DrawText(eventLog[i], 10, 530 + (i * 15), 10, i == 0 ? DARKGREEN : GRAY);
-    }
-}
-
-// --- MAIN ---
 int main(void) {
-    ctx = GEngineInitialize("GEngine - Event Double Buffer Test", 800, 600);
+    // Inizializza l'engine (potrebbe essere necessario se l'allocatore di tipi dipende dal Context)
+    GEnginePublicContext* ctx = GEngineInitialize("Reflection Test", 800, 600);
     if (!ctx) return -1;
 
-    ctx->backgroundColor = RAYWHITE;
-    ctx->mainCamera2D.zoom = 1.0f;
+    // 2. Registriamo il componente passando le triplette: (Tipo, Nome, Offset)
+    GEngineComponentTypeID moveCompID = GEngineRegisterComponent(
+        sizeof(MovementData),
+        "MovementData",
+        4, // Numero esatto di campi
+        GENGINE_FIELD_TYPE_UINT8_T,  "id",       offsetof(MovementData, id),
+        GENGINE_FIELD_TYPE_FLOAT,    "speed",    offsetof(MovementData, speed),
+        GENGINE_FIELD_TYPE_VECTOR2,  "position", offsetof(MovementData, position),
+        GENGINE_FIELD_TYPE_BOOL,     "isAlive",  offsetof(MovementData, isAlive)
+    );
 
-    // Registriamo un componente fittizio senza campi (size = sizeof(int) per sicurezza di allocazione)
-    GEngineComponentTypeID dummyComp = GEngineRegisterComponent(sizeof(int), "DummyComponent", 0);
+    // 3. Recuperiamo le informazioni tramite l'API
+    const ComponentTypeInfo* info = GEngineGetComponentTypeInfo(moveCompID);
 
-    // Registrazione dei Subsystem passando la callback vuota, 1 componente, e l'ID del dummyComp
-    GEngineRegisterSubSystem(NULL, NULL, Input_FrameStart, DummyCallback, NULL, GENGINE_SUBSYSTEM_TYPE_INPUT, false, 1, dummyComp);
-    GEngineRegisterSubSystem(NULL, NULL, Logic_FrameStart, DummyCallback, NULL, GENGINE_SUBSYSTEM_TYPE_LOGIC, false, 1, dummyComp);
-    GEngineRegisterSubSystem(NULL, NULL, Render_FrameStart, DummyCallback, Render_FrameEnd, GENGINE_SUBSYSTEM_TYPE_RENDER, false, 1, dummyComp);
 
-    GEngineStartGame();
+    if (info != NULL) {
+        printf("\n=== METADATI COMPONENTE: %s ===\n", info->name); // Assumo info->name esista
+        // Assumo tu abbia info->size e info->fieldCount nella tua struct vera
 
-    while (GEngineGameWantsToRun()) {
-        GEngineProcessFrame();
+        printf("-------------------------------------------------\n");
+        // 4. Testiamo se gli offset recuperati dall'engine combaciano
+        // NOTA: Sostituisci "info->fields[i]" con la struttura reale del tuo array interno
+        for (uint32_t i = 0; i < info->fieldCount; i++) {
+            printf("Campo [%d]: Nome: %-10s | Tipo ID: %-2d | Offset Engine: %2d byte \n",
+                   i,
+                   info->componentFieldsInfo[i].name,
+                   info->componentFieldsInfo[i].type,
+                   info->componentFieldsInfo[i].offset);
+        }
+        printf("-------------------------------------------------\n");
+
+        // Verifica matematica per confronto diretto in console:
+        printf("\nVerifica padding del compilatore (offsetof nativo):\n");
+        printf("offsetof(id):       %zu byte\n", offsetof(MovementData, id));
+        printf("offsetof(speed):    %zu byte\n", offsetof(MovementData, speed));
+        printf("offsetof(position): %zu byte\n", offsetof(MovementData, position));
+        printf("offsetof(isAlive):  %zu byte\n", offsetof(MovementData, isAlive));
+
+        printf("\nSe 'Offset Engine' e 'offsetof nativo' sono identici, il sistema funziona.\n\n");
+    } else {
+        printf("ERRORE: Recupero ComponentTypeInfo fallito.\n");
     }
 
     GEngineTerminate();

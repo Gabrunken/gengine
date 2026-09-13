@@ -3,6 +3,7 @@
 
 #include "raylib.h"
 #include <stdint.h>
+#include <gecs.h>
 typedef struct GEngineScene GEngineScene; //Forward declaration for opaque pointer.
 
 typedef struct {size_t id; size_t gen;} GameObjectID;

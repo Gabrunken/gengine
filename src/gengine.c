@@ -5,6 +5,7 @@
 #include <gengine.h>
 
 #include <gecs.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -145,16 +146,16 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 
 	_publicContext.defaultComponents.transform2D = GECS_RegisterComponent(sizeof(Transform2DComponent), "Transform2D",
 	 3,
-	 GENGINE_FIELD_TYPE_VECTOR2, "position",
-	 GENGINE_FIELD_TYPE_VECTOR2, "scale",
-	 GENGINE_FIELD_TYPE_FLOAT, "rotation");
+	 GENGINE_FIELD_TYPE_VECTOR2, "position", offsetof(Transform2DComponent, position),
+	 GENGINE_FIELD_TYPE_VECTOR2, "scale", offsetof(Transform2DComponent, scale),
+	 GENGINE_FIELD_TYPE_FLOAT, "rotation", offsetof(Transform2DComponent, rotation));
 
 	_publicContext.defaultComponents.sprite = GECS_RegisterComponent(sizeof(SpriteComponent), "Sprite",
 	 4,
-	 GENGINE_FIELD_TYPE_SPRITESHEET_ENTRY, "spriteSheetEntry",
-	 GENGINE_FIELD_TYPE_VECTOR2, "pivot",
-	 GENGINE_FIELD_TYPE_COLOR, "tint",
-	 GENGINE_FIELD_TYPE_UINT16_T, "depth");
+	 GENGINE_FIELD_TYPE_SPRITESHEET_ENTRY, "spriteSheetEntry", offsetof(SpriteComponent, spriteSheetEntry),
+	 GENGINE_FIELD_TYPE_VECTOR2, "pivot", offsetof(SpriteComponent, pivot),
+	 GENGINE_FIELD_TYPE_COLOR, "tint", offsetof(SpriteComponent, tint),
+	 GENGINE_FIELD_TYPE_UINT16_T, "depth", offsetof(SpriteComponent, depth));
 
 	GEngineRegisterSubSystem(
 		SpriteStartUp,
@@ -816,6 +817,16 @@ void GEnginePushEvent(EventType type, void* eventData)
 
 	dyarray* queue = DyArrayGetElement(&_privateContext.backEventQueues, type);
 	DyArrayAddElement(queue, eventData); //EventData should exactly be the size of the struct related to the passed EventType.
+}
+
+const ComponentTypeInfo* GEngineGetComponentTypeInfo(GEngineComponentTypeID componentTypeID)
+{
+	if (!_privateContext.initialized) {
+		GENGINE_LOG_MISUSE("engine is not yet initialized");
+		return NULL;
+	}
+
+	return GECS_GetComponentTypeInfo(componentTypeID);
 }
 
 /*

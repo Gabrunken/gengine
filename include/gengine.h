@@ -15,7 +15,7 @@
  * ANOTHER NOTE
  * When you draw, it is your responsibility to wrap your draw commands in BeginMode2/3D followed by EndMode2/3D,
  * since some systems might use the 2D camera and some might need the 3D camera, your choice.
- * But don't call BeginDrawing / EndDrawing!!! They are already called.
+ * But don't call BeginDrawing / EndDrawing!!! they are already called.
  */
 
 #include <dyarray.h>
@@ -56,6 +56,27 @@ GEngineSystemID GEngineRegisterSubSystem(
 
 /*
  * Registers a component type in the engine.
+ * @param size The size in bytes of the singular component.
+ * @param name The name of this component type.
+ * @brief Register a component type in the system.
+ * @param fieldCount The number of elements (fields) this component consists of.
+ *
+ * IMPORTANT NOTE: until decided otherwise, the fields must be KNOWN fields.
+ * Meaning that they must be present inside the GEngineFieldType enum.
+ *
+ * The variadic parameter is used to describe the elements this component has, coupled with the
+ * previous argument "fieldCount", to provide introspection information for the system.
+ * This parameter is made of "fieldType" and "fieldName" and "fieldOffset" triplets, so for each field in the component,
+ * insert the type, name and offset in this order. The fields must be EXACTLY ordered and layed out as
+ * you would use them in memory.
+ *
+ * IMPORTANT NOTE: to retrieve the member offset (if it's in a struct obviously), use offsetof().
+ *
+ * IMPORTANT NOTE: again, if the component is a struct, it MUST NOT have custom, unknown structs inside.
+ * If you put your own struct inside a component as field, it will have an unknown field type,
+ * causing undefined behaviour.
+ *
+ * @return The unique id assigned to the newly registered component type.
  */
 GEngineComponentTypeID GEngineRegisterComponent(size_t size, const char* name, uint32_t fieldCount, ...);
 
@@ -188,7 +209,7 @@ bool GEngineIsSceneValid(const GEngineScene* scene);
  * @return A pointer to a read-only struct that contains the meta data for this
  * component type.
  */
-//const ComponentTypeInfo* GEngineGetComponentTypeInfo(ComponentTypeID componentTypeID);
+const ComponentTypeInfo* GEngineGetComponentTypeInfo(GEngineComponentTypeID componentTypeID);
 
 /*
  * @brief Creates an entity in the system.
