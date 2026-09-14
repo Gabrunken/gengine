@@ -48,6 +48,7 @@ typedef struct
     {
         GEngineComponentTypeID transform2D;
         GEngineComponentTypeID sprite;
+        GEngineComponentTypeID animationPlayer;
     } defaultComponents;
 
     Camera2D mainCamera2D;

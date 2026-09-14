@@ -1,3 +1,4 @@
+#include "animationplayer_system.h"
 #include "dyarray.h"
 #include "gengine_types.h"
 #include "raylib.h"
@@ -157,6 +158,13 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 	 GENGINE_FIELD_TYPE_COLOR, "tint", offsetof(SpriteComponent, tint),
 	 GENGINE_FIELD_TYPE_UINT16_T, "depth", offsetof(SpriteComponent, depth));
 
+	_publicContext.defaultComponents.animationPlayer = GECS_RegisterComponent(sizeof(AnimationPlayerComponent), "AnimationPlayer",
+	 2,
+	 GENGINE_FIELD_TYPE_ANIMATION, "animation", offsetof(AnimationPlayerComponent, animation),
+	 GENGINE_FIELD_TYPE_BOOL, "loopAnimation", offsetof(AnimationPlayerComponent, loopAnimation));
+
+	//SubSystem registration
+	//Sprite
 	GEngineRegisterSubSystem(
 		SpriteStartUp,
 		SpriteCleanUp,
@@ -166,6 +174,16 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 		GENGINE_SUBSYSTEM_TYPE_RENDER, true, 2,
 			_publicContext.defaultComponents.transform2D,
 			_publicContext.defaultComponents.sprite);
+
+	//AnimationPlayer
+	GEngineRegisterSubSystem(
+		AnimationPlayerStartUp,
+		AnimationPlayerCleanUp,
+		AnimationPlayerFrameStart,
+		AnimationPlayerSystem,
+		AnimationPlayerFrameEnd,
+		GENGINE_SUBSYSTEM_TYPE_LOGIC, false, 1,
+			_publicContext.defaultComponents.animationPlayer);
 
 	InitWindow(windowWidth, windowHeight, windowTitle);
 

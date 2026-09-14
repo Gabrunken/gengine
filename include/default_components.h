@@ -1,6 +1,8 @@
 #ifndef GENGINE_DEFAULT_COMPONENTS_H_
 #define GENGINE_DEFAULT_COMPONENTS_H_
 
+#include "gecs.h"
+#include "gengine_types.h"
 #include "raylib.h"
 #include <sprite_system.h>
 #include <stdint.h>
@@ -28,6 +30,7 @@ typedef enum
     GENGINE_FIELD_TYPE_VECTOR3,
 
     GENGINE_FIELD_TYPE_SPRITESHEET_ENTRY,
+    GENGINE_FIELD_TYPE_ANIMATION,
 } GEngineFieldType;
 
 typedef struct
@@ -50,5 +53,29 @@ typedef struct
     Color tint;
     uint16_t depth;
 } SpriteComponent;
+
+typedef struct
+{
+    void* data;
+    float timestamp;
+} Keyframe;
+
+typedef struct
+{
+    dyarray keyframes; //Contains keyframe data (identify data type through field info)
+    ComponentFieldInfo componentFieldInfo;
+    GEngineComponentTypeID componentTypeID;
+} AnimationChannel;
+
+typedef struct
+{
+    dyarray animationChannels; //Contains AnimationChannel
+} Animation;
+
+typedef struct
+{
+    Animation animation;
+    bool loopAnimation;
+} AnimationPlayerComponent;
 
 #endif
