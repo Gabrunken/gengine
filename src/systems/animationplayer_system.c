@@ -1,11 +1,15 @@
 #include "dyarray.h"
+#include "gecs.h"
 #include "gengine_types.h"
+#include "hashmap.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "sparse_set.h"
+#include <stdlib.h>
 #include <animationplayer_system.h>
 #include <default_components.h>
 #include <gengine.h>
+#include <string.h>
 
 extern GEnginePublicContext _publicContext;
 
@@ -214,3 +218,161 @@ void AnimationPlayerCleanUp()
 {
 	SparseSetFree(&animationStates);
 }
+
+Animation GEngineCreateAnimation()
+{
+	Animation animation = {0};
+	DyArrayCreate(&animation.animationChannels, sizeof(AnimationChannel), 10);
+
+	return animation;
+}
+
+void GEngineFreeAnimation(Animation* animation)
+{
+	if (!animation) {
+		printf("GEngineFreeAnimation error: animation is NULL.\n");
+		return;
+	}
+
+	for (size_t channel = 0; channel < animation->animationChannels.elementCount; channel++)
+	{
+		AnimationChannel* channelPtr = DyArrayGetElement(&animation->animationChannels, channel);
+
+		for (size_t keyframe = 0; keyframe < channelPtr->keyframes.elementCount; keyframe++)
+		{
+			Keyframe* keyframePtr = DyArrayGetElement(&channelPtr->keyframes, keyframe);
+			free(keyframePtr->data);
+		}
+
+		DyArrayFree(&channelPtr->keyframes);
+	}
+
+	DyArrayFree(&animation->animationChannels);
+}
+
+uint32_t GEngineAddAnimationChannel(Animation* animation, GEngineComponentTypeID targetComponent, const char* targetField)
+{
+	if (!animation) {
+		printf("GEngineAddAnimationChannel error: animation is NULL.\n");
+		return 0;
+	}
+
+	if (!targetField) {
+		printf("GEngineAddAnimationChannel error: targetField is NULL.\n");
+		return 0;
+	}
+
+	AnimationChannel channel = {0};
+	ComponentTypeInfo* componentTypeInfo = (ComponentTypeInfo*)GEngineGetComponentTypeInfo(targetComponent);
+	if (!componentTypeInfo) {
+		printf("GEngineAddAnimationChannel error: targetComponent %d is not a valid component type.\n", targetComponent);
+		return 0;
+	}
+
+	uint64_t fieldIdx;
+	bool keyPresent = hashmap_get_val(componentTypeInfo->fieldNameToInfoIdx, targetField, &fieldIdx);
+	if (!keyPresent) {
+		printf("GEngineAddAnimationChannel error: targetField %s is not present inside %d targetComponent.\n", targetField, targetComponent);
+		return 0;
+	}
+
+	channel.componentFieldInfo = componentTypeInfo->componentFieldsInfo[fieldIdx];
+	channel.componentTypeID = targetComponent;
+	DyArrayCreate(&channel.keyframes, sizeof(Keyframe), 20);
+
+	DyArrayAddElement(&animation->animationChannels, &channel);
+
+	return animation->animationChannels.elementCount;
+}
+
+void GEngineRemoveAnimationChannel(Animation* animation, uint32_t channelIdx)
+{
+	if (!animation) {
+		printf("GEngineRemoveAnimationChannel error: animation is NULL.\n");
+		return;
+	}
+
+	if (channelIdx == 0) {
+		printf("GEngineRemoveAnimationChannel error: channelIdx is invalid (%d).\n", channelIdx);
+		return;
+	}
+
+	if (animation->animationChannels.elementCount < channelIdx) {
+		printf("GEngineRemoveAnimationChannel error: the animation does not have a channel with Index %d.\n", channelIdx);
+		return;
+	}
+
+	AnimationChannel* channel = DyArrayGetElement(&animation->animationChannels, channelIdx - 1);
+	for (size_t keyframeIdx = 0; keyframeIdx < channel->keyframes.elementCount; keyframeIdx++)
+	{
+		Keyframe* keyframe = DyArrayGetElement(&channel->keyframes, keyframeIdx);
+		free(keyframe->data);
+	}
+
+	DyArrayFree(&channel->keyframes);
+	DyArrayRemoveElement(&animation->animationChannels, channelIdx - 1);
+}
+
+uint32_t GEngineAnimationAddKeyframe(Animation* animation, uint32_t channelIdx, void* data, float timestamp, InterpolationType interpolationType)
+{
+	if (!animation) {
+		printf("GEngineRemoveAnimationChannel error: animation is NULL.\n");
+		return 0;
+	}
+
+	if (channelIdx == 0) {
+		printf("GEngineRemoveAnimationChannel error: channelIdx is invalid (%d).\n", channelIdx);
+		return 0;
+	}
+
+	if (animation->animationChannels.elementCount < channelIdx) {
+		printf("GEngineRemoveAnimationChannel error: the animation does not have a channel with Index %d.\n", channelIdx);
+		return 0;
+	}
+
+	if (!data) {
+		printf("GEngineRemoveAnimationChannel error: data is NULL.\n");
+		return 0;
+	}
+
+	AnimationChannel* channel = DyArrayGetElement(&animation->animationChannels, channelIdx);
+
+	Keyframe keyframe = {0};
+	keyframe.timestamp = timestamp;
+	keyframe.interpolationType = interpolationType;
+
+	size_t size = 0;
+	switch (channel->componentFieldInfo.type) {
+		case GENGINE_FIELD_TYPE_FLOAT:
+			size = sizeof(float);
+			break;
+
+		case GENGINE_FIELD_TYPE_VECTOR2:
+			size = sizeof(Vector2);
+			break;
+
+		case GENGINE_FIELD_TYPE_VECTOR3:
+			size = sizeof(Vector3);
+			break;
+
+		case GENGINE_FIELD_TYPE_COLOR:
+			size = sizeof(Color);
+			break;
+
+		default:
+			printf("GEngineRemoveAnimationChannel error: field type cannot be interpolated.\n");
+			return 0;
+			break;
+	}
+
+	keyframe.data = malloc(size);
+	memcpy(keyframe.data, data, size);
+
+	DyArrayAddElement(&channel->keyframes, &keyframe);
+
+	return channel->keyframes.elementCount;
+}
+
+void GEngineAnimationRemoveKeyframe(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx);
+
+void GEngineAnimationModifyKeyframeData(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx, void* newData);

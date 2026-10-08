@@ -207,7 +207,7 @@ bool GEngineIsSceneValid(const GEngineScene* scene);
  * @brief Get a component type meta data.
  * @param componentTypeID The id of the requested component type.
  * @return A pointer to a read-only struct that contains the meta data for this
- * component type.
+ * component type. NULL is the component type does not exist.
  */
 const ComponentTypeInfo* GEngineGetComponentTypeInfo(GEngineComponentTypeID componentTypeID);
 

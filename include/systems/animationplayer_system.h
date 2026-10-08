@@ -14,15 +14,17 @@ void AnimationPlayerCleanUp();
 Animation GEngineCreateAnimation();
 //You must call this when you're done with an animation
 void GEngineFreeAnimation(Animation* animation);
-//Returns channel idx
+//Returns channel idx (returns 0 on failure)
+// IMPORTANT NOTE, IDX RIGHT NOW ARE NOT STABLE, THEY ARE PHYSICAL INDICES SO IF YOU REMOVE A CHANNEL THEY WILL FUCK UP,
+// SAME FOR THE KEYFRAMES
 uint32_t GEngineAddAnimationChannel(Animation* animation, GEngineComponentTypeID targetComponent, const char* targetField);
 //Same here
 void GEngineRemoveAnimationChannel(Animation* animation, uint32_t channelIdx);
-//Returns keyframe idx
-uint32_t GEngineAnimationAddKeyframe(Animation* animation, uint32_t channelIdx, void* data, float timestamp);
+//Returns keyframe idx (returns 0 on failure)
+uint32_t GEngineAnimationAddKeyframe(Animation* animation, uint32_t channelIdx, void* data, float timestamp, InterpolationType interpolationType);
 
 void GEngineAnimationRemoveKeyframe(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx);
 
-void GEngineAnimationModifyKeyframe(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx, void* newData);
+void GEngineAnimationModifyKeyframeData(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx, void* newData);
 
 #endif
