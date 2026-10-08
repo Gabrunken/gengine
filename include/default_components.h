@@ -54,23 +54,31 @@ typedef struct
     uint16_t depth;
 } SpriteComponent;
 
+typedef enum
+{
+    GENGINE_INTERPOLATION_LINEAR,
+    GENGINE_INTERPOLATION_QUADRATIC,
+} InterpolationType;
+
 typedef struct
 {
-    void* data;
+    void* data; //Use AnimationChannel field info to interpret the data type
     float timestamp;
+    InterpolationType interpolationType; //Interpolation type from this to the next keyframe.
 } Keyframe;
 
 typedef struct
 {
     dyarray keyframes; //Contains keyframe data (identify data type through field info)
-    ComponentFieldInfo componentFieldInfo;
-    GEngineComponentTypeID componentTypeID;
+    ComponentFieldInfo componentFieldInfo; //Used for fetching the right data type and memory position in the Component data struct
+    GEngineComponentTypeID componentTypeID; //Which component for this GameObject are we going to animate?
 } AnimationChannel;
 
 typedef struct
 {
-    dyarray animationChannels; //Contains AnimationChannel
-} Animation;
+    dyarray animationChannels; //Contains AnimationChannel(s)
+    float duration; //Basically how much time the longest animation channel plays.
+} Animation; //All these resources are exposed but they are not made to be modified manually!
 
 typedef struct
 {
