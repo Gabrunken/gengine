@@ -19,7 +19,8 @@
  */
 
 #include <dyarray.h>
-#include "default_components.h"
+#include <default_components.h>
+#include <default_systems.h>
 #include <limits.h>
 #include <stdint.h>
 #include <gizmos.h>

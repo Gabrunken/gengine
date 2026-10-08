@@ -4,5 +4,6 @@
 /*
  * Include all system headers
  */
+#include <animationplayer_system.h>
 
 #endif

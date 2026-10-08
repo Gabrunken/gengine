@@ -72,6 +72,7 @@ typedef struct
     dyarray keyframes; //Contains keyframe data (identify data type through field info)
     ComponentFieldInfo componentFieldInfo; //Used for fetching the right data type and memory position in the Component data struct
     GEngineComponentTypeID componentTypeID; //Which component for this GameObject are we going to animate?
+    float duration;
 } AnimationChannel;
 
 typedef struct
@@ -82,7 +83,7 @@ typedef struct
 
 typedef struct
 {
-    Animation animation;
+    Animation animation; //EVERY RESOURCE INSIDE A COMPONENT WILL BE STORED AS IDs FROM A CENTRALIZED RESOURCE SYSTEM, SO THAT SERIALIZATION WORKS.
     bool loopAnimation;
 } AnimationPlayerComponent;
 

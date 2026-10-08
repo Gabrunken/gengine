@@ -27,4 +27,9 @@ void GEngineAnimationRemoveKeyframe(Animation* animation, uint32_t channelIdx, u
 
 void GEngineAnimationModifyKeyframeData(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx, void* newData);
 
+void GEnginePlayCurrentAnimation(GameObjectID gameobject);
+void GEnginePlayAnimation(GameObjectID gameobject, Animation* animation);
+void GEnginePauseAnimation(GameObjectID gameobject);
+void GEngineResumeAnimation(GameObjectID gameobject);
+
 #endif

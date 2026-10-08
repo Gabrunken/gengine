@@ -76,9 +76,14 @@ void AnimationPlayerFrameStart()
 			//It has the component
 			AnimationPlayingState state = {0};
 			state.gameObject = event->gameObjectID;
-			state.shouldBePlaying = false; //Let's specify this...
+			state.shouldBePlaying = true; //Let's specify this...
 
 			DyArrayCreate(&state.lastKeyframeIdxs, sizeof(uint32_t), 20);
+
+			for (size_t j = 0; j < component->animation.animationChannels.elementCount; j++) {
+				DyArrayAddElement(&state.lastKeyframeIdxs, &(uint32_t){0});
+			}
+
 			SparseSetAddElement(&animationStates, event->gameObjectID.id, &state);
 		}
 	}
@@ -132,10 +137,25 @@ void ProcessAnimationState(AnimationPlayingState* animationPlayingState, Animati
 			continue;
 		}
 
-		Keyframe* nextKeyframe = DyArrayGetElement(&channelPtr->keyframes, *(lastUsedKeyframeIdx + 1));
-		//t goes from 0 to 1 and it's the interpolation progress from this keyframe to the next.
-		float t = (animationPlayingState->timeProgression - keyframe->timestamp) / (animationPlayingState->timeProgression - nextKeyframe->timestamp);
+		Keyframe* nextKeyframe = DyArrayGetElement(&channelPtr->keyframes, *(lastUsedKeyframeIdx) + 1);
+
+		//Check if we should move on to the next keyframe
+		if (nextKeyframe->timestamp <= animationPlayingState->timeProgression) {
+			*lastUsedKeyframeIdx += 1;
+		}
+
 		animationPlayingState->timeProgression += GetFrameTime();
+
+		float segmentDuration = nextKeyframe->timestamp - keyframe->timestamp;
+
+		//t goes from 0 to 1 and it's the interpolation progress from this keyframe to the next.
+		float t = 0.0f;
+		if (segmentDuration > 0.0f) {
+		    t = (animationPlayingState->timeProgression - keyframe->timestamp) / segmentDuration;
+		}
+
+		if (t > 1.0f) t = 1.0f;
+		if (t < 0.0f) t = 0.0f;
 
 		//Use Raylib's Vector2 Lerp and others for interpolation, they come handy!
 		//Vector2 InterpolateVec2(Vector2 a, Vector2 b, float t); ...
@@ -185,11 +205,6 @@ void ProcessAnimationState(AnimationPlayingState* animationPlayingState, Animati
 					animationPlayingState->gameObject.id, animationPlayingState->gameObject.gen, channelIdx);
 				break;
 		}
-
-		//Check if we should move on to the next keyframe
-		if (keyframe->timestamp <= animationPlayingState->timeProgression) {
-			*lastUsedKeyframeIdx += 1;
-		}
 	}
 }
 
@@ -197,6 +212,7 @@ void AnimationPlayerSystem(GameObjectID gameObjectID, void** components)
 {
 	AnimationPlayerComponent* player = components[0];
 
+	if (!SparseSetHasElement(&animationStates, gameObjectID.id)) return; //It is inserted with a frame of delay.
 	AnimationPlayingState* state = SparseSetGetElement(&animationStates, gameObjectID.id);
 	if (!state) {
 		//We shouldn't get here... I don't know what happened.
@@ -335,7 +351,7 @@ uint32_t GEngineAnimationAddKeyframe(Animation* animation, uint32_t channelIdx, 
 		return 0;
 	}
 
-	AnimationChannel* channel = DyArrayGetElement(&animation->animationChannels, channelIdx);
+	AnimationChannel* channel = DyArrayGetElement(&animation->animationChannels, channelIdx - 1);
 
 	Keyframe keyframe = {0};
 	keyframe.timestamp = timestamp;
@@ -370,9 +386,81 @@ uint32_t GEngineAnimationAddKeyframe(Animation* animation, uint32_t channelIdx, 
 
 	DyArrayAddElement(&channel->keyframes, &keyframe);
 
+	if (keyframe.timestamp > channel->duration) {
+		channel->duration = keyframe.timestamp;
+	}
+
+	for (size_t i = 0; i < animation->animationChannels.elementCount; i++)
+	{
+		AnimationChannel* channel = DyArrayGetElement(&animation->animationChannels, i);
+		if (channel->duration > animation->duration) {
+			animation->duration = channel->duration;
+		}
+	}
+
 	return channel->keyframes.elementCount;
 }
 
 void GEngineAnimationRemoveKeyframe(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx);
 
 void GEngineAnimationModifyKeyframeData(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx, void* newData);
+
+void GEnginePlayCurrentAnimation(GameObjectID gameobject)
+{
+	AnimationPlayingState* animationPlayingState = SparseSetGetElement(&animationStates, gameobject.id);
+	if (!animationPlayingState) {
+		printf("GEnginePlayCurrentAnimation error: gameobject does not have an AnimationPlayerComponent.\n");
+		return;
+	}
+
+	animationPlayingState->shouldBePlaying = true;
+	animationPlayingState->timeProgression = 0.0f;
+	for (size_t i = 0; i < animationPlayingState->lastKeyframeIdxs.elementCount; i++)
+	{
+		uint32_t* idx = DyArrayGetElement(&animationPlayingState->lastKeyframeIdxs, i);
+		*idx = 0;
+	}
+}
+
+void GEnginePlayAnimation(GameObjectID gameobject, Animation* animation)
+{
+	AnimationPlayingState* animationPlayingState = SparseSetGetElement(&animationStates, gameobject.id);
+	if (!animationPlayingState) {
+		printf("GEnginePlayAnimation error: gameobject does not have an AnimationPlayerComponent.\n");
+		return;
+	}
+
+	AnimationPlayerComponent* animationPlayer = GEngineGetComponent(gameobject, _publicContext.defaultComponents.animationPlayer);
+	animationPlayer->animation = *animation;
+
+	animationPlayingState->shouldBePlaying = true;
+	animationPlayingState->timeProgression = 0.0f;
+	for (size_t i = 0; i < animationPlayingState->lastKeyframeIdxs.elementCount; i++)
+	{
+		uint32_t* idx = DyArrayGetElement(&animationPlayingState->lastKeyframeIdxs, i);
+		*idx = 0;
+	}
+}
+
+void GEnginePauseAnimation(GameObjectID gameobject)
+{
+	AnimationPlayingState* animationPlayingState = SparseSetGetElement(&animationStates, gameobject.id);
+	if (!animationPlayingState) {
+		printf("GEnginePauseAnimation error: gameobject does not have an AnimationPlayerComponent.\n");
+		return;
+	}
+
+	animationPlayingState->shouldBePlaying = false;
+}
+
+
+void GEngineResumeAnimation(GameObjectID gameobject)
+{
+	AnimationPlayingState* animationPlayingState = SparseSetGetElement(&animationStates, gameobject.id);
+	if (!animationPlayingState) {
+		printf("GEngineResumeAnimation error: gameobject does not have an AnimationPlayerComponent.\n");
+		return;
+	}
+
+	animationPlayingState->shouldBePlaying = true;
+}
