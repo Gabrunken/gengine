@@ -76,7 +76,7 @@ void AnimationPlayerFrameStart()
 			//It has the component
 			AnimationPlayingState state = {0};
 			state.gameObject = event->gameObjectID;
-			state.shouldBePlaying = true;
+			state.shouldBePlaying = false; //Let's specify this...
 
 			DyArrayCreate(&state.lastKeyframeIdxs, sizeof(uint32_t), 20);
 			SparseSetAddElement(&animationStates, event->gameObjectID.id, &state);
