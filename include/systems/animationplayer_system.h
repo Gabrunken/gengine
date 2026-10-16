@@ -27,8 +27,11 @@ void GEngineAnimationRemoveKeyframe(Animation* animation, uint32_t channelIdx, u
 
 void GEngineAnimationModifyKeyframeData(Animation* animation, uint32_t channelIdx, uint32_t keyframeIdx, void* newData);
 
+/*
+ * These functions expect the GameObject to have an AnimationPlayerComponent
+ * Also these functions cannot be called before Starting the game with GEngineStartGame
+ */
 void GEnginePlayCurrentAnimation(GameObjectID gameobject);
-void GEnginePlayAnimation(GameObjectID gameobject, Animation* animation);
 void GEnginePauseAnimation(GameObjectID gameobject);
 void GEngineResumeAnimation(GameObjectID gameobject);
 

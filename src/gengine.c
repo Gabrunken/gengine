@@ -159,9 +159,10 @@ GEnginePublicContext* GEngineInitialize(const char* windowTitle, unsigned short 
 	 GENGINE_FIELD_TYPE_UINT16_T, "depth", offsetof(SpriteComponent, depth));
 
 	_publicContext.defaultComponents.animationPlayer = GECS_RegisterComponent(sizeof(AnimationPlayerComponent), "AnimationPlayer",
-	 2,
-	 GENGINE_FIELD_TYPE_ANIMATION, "animation", offsetof(AnimationPlayerComponent, animation),
-	 GENGINE_FIELD_TYPE_BOOL, "loopAnimation", offsetof(AnimationPlayerComponent, loopAnimation));
+	 3,
+	 GENGINE_FIELD_TYPE_RESOURCE_ANIMATION, "animation", offsetof(AnimationPlayerComponent, animation),
+	 GENGINE_FIELD_TYPE_BOOL, "loopAnimation", offsetof(AnimationPlayerComponent, loopAnimation),
+	 GENGINE_FIELD_TYPE_BOOL, "playOnStart", offsetof(AnimationPlayerComponent, playOnStart));
 
 	//SubSystem registration
 	//Sprite
@@ -1135,6 +1136,11 @@ void GEngineLoadSceneFromDisk(const char* filePath)
 	}
 
 	GECS_MakeAndLoadSnapshotFromDisk(filePath);
+}
+
+bool GEngineGameStarted()
+{
+	return _privateContext.gameStarted;
 }
 
 Rectangle GEngineGetVisibleSpriteRectangle(SpriteComponent* spriteComponent, Transform2DComponent* transformComponent)

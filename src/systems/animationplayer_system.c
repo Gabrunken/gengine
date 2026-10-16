@@ -11,6 +11,20 @@
 #include <gengine.h>
 #include <string.h>
 
+/*
+ * VERY IMPORTANT NOTE:
+ * The code below uses direct "Animation" struct manipulation,
+ * but an Animation is a Resource, which should be accessed via a
+ * Resource Manager. This is mostly because a Component cannot in any
+ * circumstance have a Raw Resource data inside, since it must only hold
+ * pure data, no references are allowed whatsoever.
+ *
+ * This will need to change as soon as possible, the immediate next step to this module's
+ * conclusion is to make a Resource Manager to keep track of them as IDs.
+ * This code will be refactored, but it won't be a big deal since only the Animation
+ * accesses will be rewritten, not the core logic.
+ */
+
 extern GEnginePublicContext _publicContext;
 
 typedef struct
@@ -28,6 +42,60 @@ void AnimationPlayerStartUp()
 	SparseSetCreate(&animationStates, 100, sizeof(AnimationPlayingState));
 }
 
+/*
+ * Expects the state lastKeyframeIdxs buffer to be already allocated
+ * Call it every frame to synchronize every change made to the Player that is relevant
+ * to the PlayingState.
+ */
+void SyncPlayingStateWithAnimationPlayer(AnimationPlayingState* state, AnimationPlayerComponent* player)
+{
+	if (!player) {return;} //REFACTOR ANIMATION ACCESS (null ref check)
+
+	//Sync channel keyframes only if a new animation has been set
+	if (false) //if the resource ids are different...
+	{
+		DyArrayClear(&state->lastKeyframeIdxs);
+
+		for (size_t i = 0; i < player->animation.animationChannels.elementCount; i++) { //REFACTOR ANIMATION ACCESS
+			DyArrayAddElement(&state->lastKeyframeIdxs, &(uint32_t){0});
+		}
+	}
+}
+
+void InitializePlayingState(AnimationPlayingState* state, AnimationPlayerComponent* player, GameObjectID gameObject)
+{
+	DyArrayCreate(&state->lastKeyframeIdxs, sizeof(uint32_t), 20);
+	/*
+	 * First time initialization
+	 */
+	state->gameObject = gameObject;
+	state->shouldBePlaying = player->playOnStart;
+	state->timeProgression = 0.0f;
+
+	/*
+	 * Per frame sync initialization
+	 */
+	SyncPlayingStateWithAnimationPlayer(state, player);
+
+	//IMMA HARD-CODE IT RN BECAUSE THE RESOURCE MANAGER IS NOT DONE YET
+	//Animation channel sync
+	for (size_t i = 0; i < player->animation.animationChannels.elementCount; i++) { //REFACTOR ANIMATION ACCESS
+		DyArrayAddElement(&state->lastKeyframeIdxs, &(uint32_t){0});
+	}
+}
+
+void FreePlayingState(AnimationPlayingState* state)
+{
+	DyArrayFree(&state->lastKeyframeIdxs);
+	state->gameObject.id = 0;
+	state->gameObject.gen = 0;
+	state->timeProgression = 0.0f;
+	state->shouldBePlaying = false;
+}
+
+/*
+ * AnimationPlayingState Insertion/Removal
+ */
 void AnimationPlayerFrameStart()
 {
 	//At each frame start, check the event queue for any ComponentAttached and ComponentDetached events,
@@ -47,13 +115,16 @@ void AnimationPlayerFrameStart()
 			AnimationPlayerComponent* component = GEngineGetComponent(event->gameObjectID, _publicContext.defaultComponents.animationPlayer);
 			//Does it ACTUALLY not have that component?
 			if (!component) {
+				if (!SparseSetHasElement(&animationStates, event->gameObjectID.id)) continue;
+
 				AnimationPlayingState* state = SparseSetGetElement(&animationStates, event->gameObjectID.id);
-				DyArrayFree(&state->lastKeyframeIdxs);
+				FreePlayingState(state);
 				SparseSetRemoveElement(&animationStates, event->gameObjectID.id);
 				continue;
 			}
 
 			//It has the component, don't remove from the PlayingState set.
+			//Animation data is checked every frame, no need to additionally check here.
 		}
 	}
 
@@ -67,23 +138,24 @@ void AnimationPlayerFrameStart()
 			AnimationPlayerComponent* component = GEngineGetComponent(event->gameObjectID, _publicContext.defaultComponents.animationPlayer);
 			//Does it not have the component, contrary to what the event says?
 			if (!component) {
+				if (!SparseSetHasElement(&animationStates, event->gameObjectID.id)) continue;
+
 				AnimationPlayingState* state = SparseSetGetElement(&animationStates, event->gameObjectID.id);
-				DyArrayFree(&state->lastKeyframeIdxs);
+				FreePlayingState(state);
 				SparseSetRemoveElement(&animationStates, event->gameObjectID.id);
 				continue;
 			}
 
 			//It has the component
-			AnimationPlayingState state = {0};
-			state.gameObject = event->gameObjectID;
-			state.shouldBePlaying = true; //Let's specify this...
+			//Did it already have a PlayingState?
+			if (SparseSetHasElement(&animationStates, event->gameObjectID.id)) {
+				//Animation data is checked every frame, no need to additionally check here.
+				continue;
+			};
 
-			DyArrayCreate(&state.lastKeyframeIdxs, sizeof(uint32_t), 20);
-
-			for (size_t j = 0; j < component->animation.animationChannels.elementCount; j++) {
-				DyArrayAddElement(&state.lastKeyframeIdxs, &(uint32_t){0});
-			}
-
+			//Add the PlayingState
+			AnimationPlayingState state;
+			InitializePlayingState(&state, component, event->gameObjectID);
 			SparseSetAddElement(&animationStates, event->gameObjectID.id, &state);
 		}
 	}
@@ -211,8 +283,13 @@ void ProcessAnimationState(AnimationPlayingState* animationPlayingState, Animati
 void AnimationPlayerSystem(GameObjectID gameObjectID, void** components)
 {
 	AnimationPlayerComponent* player = components[0];
+	//If we have the component, it is (it should be...) guaranteed to have the PlayingState initialized in the system.
 
-	if (!SparseSetHasElement(&animationStates, gameObjectID.id)) return; //It is inserted with a frame of delay.
+	if (!SparseSetHasElement(&animationStates, gameObjectID.id)) {
+		return;
+		//Wait next frame
+	}
+
 	AnimationPlayingState* state = SparseSetGetElement(&animationStates, gameObjectID.id);
 	if (!state) {
 		//We shouldn't get here... I don't know what happened.
@@ -220,6 +297,9 @@ void AnimationPlayerSystem(GameObjectID gameObjectID, void** components)
 			gameObjectID.id, gameObjectID.gen);
 		return;
 	}
+
+	//Synchronize the data between the PlayerComponent and our internal PlayingState.
+	SyncPlayingStateWithAnimationPlayer(state, player);
 
 	//We have the AnimationPlayerComponent, we have the AnimationPlayingState, let's play the animation!
 	ProcessAnimationState(state, player);
@@ -407,31 +487,26 @@ void GEngineAnimationModifyKeyframeData(Animation* animation, uint32_t channelId
 
 void GEnginePlayCurrentAnimation(GameObjectID gameobject)
 {
-	AnimationPlayingState* animationPlayingState = SparseSetGetElement(&animationStates, gameobject.id);
-	if (!animationPlayingState) {
-		printf("GEnginePlayCurrentAnimation error: gameobject does not have an AnimationPlayerComponent.\n");
-		return;
-	}
-
-	animationPlayingState->shouldBePlaying = true;
-	animationPlayingState->timeProgression = 0.0f;
-	for (size_t i = 0; i < animationPlayingState->lastKeyframeIdxs.elementCount; i++)
-	{
-		uint32_t* idx = DyArrayGetElement(&animationPlayingState->lastKeyframeIdxs, i);
-		*idx = 0;
-	}
-}
-
-void GEnginePlayAnimation(GameObjectID gameobject, Animation* animation)
-{
-	AnimationPlayingState* animationPlayingState = SparseSetGetElement(&animationStates, gameobject.id);
-	if (!animationPlayingState) {
-		printf("GEnginePlayAnimation error: gameobject does not have an AnimationPlayerComponent.\n");
+	if (!GEngineGameStarted()) {
+		printf("GEnginePlayCurrentAnimation error: game has not been started yet, cannot call this function.\n");
 		return;
 	}
 
 	AnimationPlayerComponent* animationPlayer = GEngineGetComponent(gameobject, _publicContext.defaultComponents.animationPlayer);
-	animationPlayer->animation = *animation;
+	if (!animationPlayer) {
+		printf("GEnginePlayCurrentAnimation error: GameObject of ID %zu and Generation %zu, doesn't have an AnimationPlayerComponent.\n",
+			gameobject.id,
+			gameobject.gen);
+		return;
+	}
+
+	if (!SparseSetHasElement(&animationStates, gameobject.id)) {
+		return; /* Wait for it to be initialized */
+	}
+
+	AnimationPlayingState* animationPlayingState = SparseSetGetElement(&animationStates, gameobject.id);
+
+	if (false) {return;} //CHECK IF THE ANIMATION REFERENCE IS PRESENT (Resource Manager REFACTOR)
 
 	animationPlayingState->shouldBePlaying = true;
 	animationPlayingState->timeProgression = 0.0f;

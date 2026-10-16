@@ -294,6 +294,12 @@ void GEngineDetachComponent(GameObjectID entity, GEngineComponentTypeID componen
 void* GEngineGetComponent(GameObjectID entity, GEngineComponentTypeID componentTypeID);
 
 /*
+ * @brief Check if the game has started and everything is initialized.
+ * @return Has GEngineStartGame been called?
+ */
+bool GEngineGameStarted();
+
+/*
  * @brief Fast way to know if an entity has a component
  */
 //Not sure if i want this, might as well use GetComponent.
